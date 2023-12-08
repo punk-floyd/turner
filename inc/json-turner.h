@@ -48,22 +48,37 @@ public:
         std::optional<std::string>  error_str;
     };
 
-    /** @brief Parse JSON data in the given range
+    /**
+     * @brief Parse JSON data in the given range
      *
-    */
+     * @param first     The start of the range to parse
+     * @param last      The end of the range to parse
+     * @param greedy    If true, the method will attempt to parse the whole
+     *  input range. If false, parsing will stop after successfully parsing
+     *  the top level JSON value.
+     *
+     * @return Returns a ParseResult containing parse results; @see ParseResult
+     */
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr auto parse(InputIt first, Stop last) -> ParseResult<InputIt>
+    constexpr auto parse(InputIt first, Stop last, bool greedy = true) -> ParseResult<InputIt>
     {
         auto [val, parse_res] = parse_value(first, last);
         _value = std::move(val);
+
+        if (greedy) {
+            parse_res.it = eat_whitespace(parse_res.it, last);
+            if (parse_res.it != last)
+                parse_res.error_str = "Trailing garbage";
+        }
+
         return parse_res;
     }
 
     /// Parse JSON data in the given range
     template <std::ranges::input_range R>
-    constexpr auto parse(R&& r)
+    constexpr auto parse(R&& r, bool greedy = true)
     {
-        return parse(std::ranges::begin(r), std::ranges::end(r));
+        return parse(std::ranges::begin(r), std::ranges::end(r), greedy);
     }
 
     // -- Attributes
@@ -229,7 +244,7 @@ protected:
 
     // Extract the next token from the input stream
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr static auto next_token(InputIt first, Stop last) -> TokenResult<InputIt>
+    [[nodiscard]] constexpr static auto next_token(InputIt first, Stop last) -> TokenResult<InputIt>
     {
         // Try to match against a keyword token: "true", "false", or "null"
         const auto try_match = [](InputIt it, Stop tm_last, std::string_view word, TokenType t)
@@ -277,10 +292,10 @@ protected:
 
     // Consume whitespace
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr static InputIt eat_whitespace(InputIt first, Stop last) noexcept
+    [[nodiscard]] constexpr static InputIt eat_whitespace(InputIt first, Stop last) noexcept
     {
         for (auto it = first; it != last; ++it) {
-            if ((*it == ' ') || (*it == '\n') || (*it == '\r') || (*it == '\t'))
+            if ((*it == ' ') || (*it == '\n') || (*it == '\r') || (*it == '\t') || (*it == '\0'))
                 continue;
 
             return it;
@@ -312,7 +327,7 @@ protected:
             auto dig_val = hex_char_value(*it);
             if (!dig_val.has_value())
                 return { it, "Invalid hex char" };
-            hex_val |= dig_val.value() << ((3 - i) << 2);
+            hex_val |= static_cast<uint16_t>(dig_val.value() << ((3 - i) << 2));
         }
 
         // Convert into UTF-8 byte(s) and emit. This can result in 1-3 bytes
@@ -339,7 +354,7 @@ protected:
 
     // Parse a string
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr static auto parse_string(InputIt first, Stop last)
+    [[nodiscard]]  static auto parse_string(InputIt first, Stop last)
         -> InternalParseResult<string, InputIt>
     {
         // first is pointing to the first char of the string.
@@ -411,7 +426,7 @@ protected:
 
     // Parse a number
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr static auto parse_number(InputIt first, Stop last)
+    [[nodiscard]] constexpr static auto parse_number(InputIt first, Stop last)
         -> InternalParseResult<number, InputIt>
     {
         // std::from_chars wants const char* parameters, not iterators.
@@ -434,7 +449,7 @@ protected:
 
     // Parse an object definition
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr static auto parse_object(InputIt first, Stop last)
+    [[nodiscard]] constexpr static auto parse_object(InputIt first, Stop last)
         -> InternalParseResult<object_ptr, InputIt>
     {
         // The calling parser has already consumed the opening '{'
@@ -507,7 +522,7 @@ protected:
 
     // Parse an object definition
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr static auto parse_array(InputIt first, Stop last)
+    [[nodiscard]] constexpr static auto parse_array(InputIt first, Stop last)
         -> InternalParseResult<array_ptr, InputIt>
     {
         // The calling parser has already consumed the opening '['
@@ -561,7 +576,7 @@ protected:
     }
 
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr static auto parse_value(InputIt first, Stop last)
+    [[nodiscard]] constexpr static auto parse_value(InputIt first, Stop last)
         -> InternalParseResult<value, InputIt>
     {
         switch (auto [it, tok_type] = next_token(first, last); tok_type) {
