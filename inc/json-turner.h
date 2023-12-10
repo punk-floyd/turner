@@ -10,12 +10,14 @@
 #ifndef zzz_I_assure_you_that_json_turner_dot_h_has_been_included
 #define zzz_I_assure_you_that_json_turner_dot_h_has_been_included
 
+#include <system_error>
 #include <string_view>
 #include <type_traits>
 #include <charconv>
 #include <concepts>
 #include <optional>
 #include <iterator>
+#include <fstream>
 #include <variant>
 #include <ranges>
 #include <string>
@@ -65,7 +67,7 @@ public:
         auto [val, parse_res] = parse_value(first, last);
         _value = std::move(val);
 
-        if (greedy) {
+        if (parse_res && greedy) {
             parse_res.it = eat_whitespace(parse_res.it, last);
             if (parse_res.it != last)
                 parse_res.error_str = "Trailing garbage";
@@ -80,6 +82,26 @@ public:
     {
         return parse(std::ranges::begin(r), std::ranges::end(r), greedy);
     }
+
+#if 1
+    std::error_code parse_file(const std::string& pathname)
+    {
+        try {
+            std::ifstream ifs(pathname);
+            ifs.exceptions(ifs.failbit | ifs.badbit);
+            auto if_begin = std::istreambuf_iterator<char>{ifs};
+            auto if_end   = std::istreambuf_iterator<char>{std::default_sentinel};
+            auto parse_res = parse(if_begin, if_end, true);
+            if (!parse_res)
+                return std::make_error_code(std::errc::argument_out_of_domain);   // MOOMOO fixme
+        }
+        catch (std::ios_base::failure& e) {
+            return e.code();
+        }
+
+        return {};
+    }
+#endif
 
     // -- Attributes
 
@@ -290,18 +312,18 @@ protected:
         return { it, TokenType::NotAToken };
     }
 
+    constexpr static inline bool is_whitespace(int ch) noexcept
+    {
+        return (ch == ' ') || (ch == '\n') || (ch == '\r') || (ch == '\t') || (ch == 0);
+    }
+
     // Consume whitespace
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr static InputIt eat_whitespace(InputIt first, Stop last) noexcept
+    [[nodiscard]] constexpr static inline InputIt eat_whitespace(InputIt first, Stop last) noexcept
     {
-        for (auto it = first; it != last; ++it) {
-            if ((*it == ' ') || (*it == '\n') || (*it == '\r') || (*it == '\t') || (*it == '\0'))
-                continue;
-
-            return it;
-        }
-
-        return last;
+        auto it = first;
+        for (; (it != last) && is_whitespace(*it); ++it);
+        return it;
     }
 
     template <typename T, std::input_iterator InputIt>
@@ -357,28 +379,8 @@ protected:
     [[nodiscard]]  static auto parse_string(InputIt first, Stop last)
         -> InternalParseResult<string, InputIt>
     {
-        // first is pointing to the first char of the string.
-        const auto string_start = first;
-
-        // The ideal case is no control characters because then it's just a
-        // simple string duplication. This first loop handles that case. If
-        // we find a '\' then we'll break and handle that below.
-
-        // First, try for the fast case: no control characters
         auto it = first;
-        for (; (it != last) && (*it != '"') && (*it != '\\'); ++it);
-
-        if (it == last)
-            return { std::string{}, { last, std::string{"Unterminated string"} } };
-        if (*it == '"') {
-            const auto string_end = it;
-            return { string{string_start, string_end}, { ++it, std::nullopt } };
-        }
-
-        // We have control characters which means we're selectively copying
-        // characters. Initialize a string with what we've got so far and
-        // we'll append as we go.
-        string s{ string_start, it };
+        string s{};
         char last_char{};
 
         for (; it != last; ++it) {
@@ -411,7 +413,7 @@ protected:
                 auto res = parse_unicode_point(++it, last, std::back_inserter(s));
                 if (res.error_str)
                     return std::make_pair(s, res);
-                std::advance(it, 4 - 1);    // -1 because of this loop (++it)
+                std::advance(it, 4 - 1);    // -1 because of this loop (++it) MOOMOO FIXME (single pass iterator)
                 break;
             }
             default:
@@ -429,22 +431,34 @@ protected:
     [[nodiscard]] constexpr static auto parse_number(InputIt first, Stop last)
         -> InternalParseResult<number, InputIt>
     {
+        // We may be dealing with a single pass iterator and there's no
+        // reliable upper bound on the length of the input string so we'll
+        // need to buffer the data. Grab everything up to the next delimiter
+        // and then parse the whole chunk.
+        std::string num_buf;
+        auto it_end = first;
+        for (; it_end != last; ++it_end) {
+            if (is_whitespace(*it_end))
+                break;
+            if ((*it_end == ',') || (*it_end == '}') || (*it_end == ']'))
+                break;
+            num_buf.push_back(*it_end);
+        }
+
         // std::from_chars wants const char* parameters, not iterators.
         // We need the pointer arithmetic here because last might be end()
         // which isn't dereferenceable.
-        const char* first_char = &*first;
-        const char* last_char = first_char + std::distance(first, last);
+        const char* first_char = num_buf.data();
+        const char* last_char =  num_buf.data() + num_buf.size();
 
         number n{};
         auto [ptr, ec] = std::from_chars(first_char, last_char, n);
-        if (ec == std::errc{}) {
-            std::advance(first, std::distance(first_char, ptr));
-            return { n, { first, std::nullopt } };
-        }
+        if (ec == std::errc{})
+            return { n, { it_end, std::nullopt } };
 
         const auto msg = (ec == std::errc::result_out_of_range)
             ? "Number is out of range" : "Not a number";
-        return { number{}, { first, msg } };
+        return { number{}, { it_end, msg } };
     }
 
     // Parse an object definition
@@ -607,7 +621,7 @@ protected:
         case TokenType::EndOfInput:
             return std::make_pair(value{}, ParseResult{ it, std::string{ "No data" } });
         case TokenType::NotAToken:
-            return std::make_pair(value{}, ParseResult{ it, std::string{ "Invalie JSON data" } });
+            return std::make_pair(value{}, ParseResult{ it, std::string{ "Invalid JSON data" } });
         default:
             return std::make_pair(value{}, ParseResult{ it, std::string{ "Unexpected token" } });
         }
