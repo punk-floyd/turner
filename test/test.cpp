@@ -32,8 +32,8 @@ TEST_CASE ("Default construction", "[construction]") {
 // Simple check the JSON input parses successfully
 static bool test_runtime_parse(json& uut, std::string_view json_input)
 {
-    auto [it, error_str] = uut.parse(json_input);
-    return !error_str.has_value();
+    auto [it, ec] = uut.parse(json_input);
+    return ec == std::errc{};
 }
 
 TEST_CASE ("Simple runtime parsing check" "[parsing]") {
@@ -220,42 +220,42 @@ TEST_CASE ("Simple runtime parsing check (Greediness)" "[parsing]") {
     json uut;
 
     SECTION ("Greedy: Trailing whitespace is okay") {
-        auto [it, error_str] = uut.parse("{}    ", true);
-        REQUIRE(!error_str.has_value());
+        const auto parse_res = uut.parse("{}    ", true);
+        REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
     }
 
     SECTION ("Non-greedy: Trailing whitespace is okay") {
-        auto [it, error_str] = uut.parse("{}    ", false);
-        REQUIRE(!error_str.has_value());
+        const auto parse_res = uut.parse("{}    ", false);
+        REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
     }
 
     SECTION ("Greedy: Trailing non-whitespace is not-okay") {
-        auto [it, error_str] = uut.parse("{}A");
-        REQUIRE(error_str.has_value());
+        const auto parse_res = uut.parse("{}A");
+        REQUIRE(static_cast<bool>(parse_res) == false);
         REQUIRE(uut.get_value().is_object());   // Object is still parsed
-        REQUIRE(*it == 'A');
+        REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Non-greedy: Trailing non-whitespace is okay") {
-        auto [it, error_str] = uut.parse("{}A", false);
-        REQUIRE(!error_str.has_value());
+        const auto parse_res = uut.parse("{}A", false);
+        REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
-        REQUIRE(*it == 'A');
+        REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Greedy: Trailing non-whitespace is not-okay (with intermediate whitespace)") {
-        auto [it, error_str] = uut.parse("{}   A");
-        REQUIRE(error_str.has_value());
+        const auto parse_res = uut.parse("{}   A");
+        REQUIRE(static_cast<bool>(parse_res) == false);
         REQUIRE(uut.get_value().is_object());   // Object is still parsed
-        REQUIRE(*it == 'A');
+        REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Non-greedy: Trailing non-whitespace is okay (with intermediate whitespace)") {
-        auto [it, error_str] = uut.parse("{}   A", false);
-        REQUIRE(!error_str.has_value());
+        const auto parse_res = uut.parse("{}   A", false);
+        REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
-        REQUIRE(*it == ' ');        // Non-greedy so we should be at first space
+        REQUIRE(*parse_res.it == ' ');        // Non-greedy so we should be at first space
     }
 }

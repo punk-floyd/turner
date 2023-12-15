@@ -25,6 +25,8 @@
 #include <memory>
 #include <map>
 
+#include "json-turner-error.h"
+
 namespace turner {
 
 class json
@@ -42,12 +44,17 @@ public:
     template <std::input_iterator InputIt>
     struct ParseResult {
 
-        explicit operator bool() const noexcept { return !error_str; }
+        constexpr ParseResult() = default;
 
-        /// Points to location just after the end of the parsed data
-        InputIt                     it;
-        /// Description of parse error, or std::nullopt
-        std::optional<std::string>  error_str;
+        constexpr ParseResult(InputIt input_it, std::error_code code = std::error_code{})
+            : it(input_it), ec(code)
+        {}
+
+        explicit operator bool() const noexcept { return !static_cast<bool>(ec); }
+
+        /// Points to location just after the end of the parsed data (or up to parse error)
+        InputIt             it{};
+        std::error_code     ec{};
     };
 
     /**
@@ -70,7 +77,7 @@ public:
         if (parse_res && greedy) {
             parse_res.it = eat_whitespace(parse_res.it, last);
             if (parse_res.it != last)
-                parse_res.error_str = "Trailing garbage";
+                parse_res.ec = json_error::trailing_garbage;
         }
 
         return parse_res;
@@ -319,7 +326,8 @@ protected:
 
     // Consume whitespace
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr static inline InputIt eat_whitespace(InputIt first, Stop last) noexcept
+    [[nodiscard]] constexpr static inline auto eat_whitespace(InputIt first, Stop last) noexcept
+        -> InputIt
     {
         auto it = first;
         for (; (it != last) && is_whitespace(*it); ++it);
@@ -331,7 +339,7 @@ protected:
 
     /// Parse an explicit unicode point from JSON string: \uXXXX
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop, std::output_iterator<char> OutputIt>
-    constexpr static auto parse_unicode_point(InputIt first, Stop last, OutputIt&& out_it)
+    [[nodiscard]] constexpr static auto parse_unicode_point(InputIt first, Stop last, OutputIt&& out_it)
         -> ParseResult<InputIt>
     {
         const auto hex_char_value = [](char ch) -> std::optional<uint16_t> {
@@ -348,7 +356,7 @@ protected:
         for (size_t i = 0; (it != last) && (i < 4); ++it,++i) {
             auto dig_val = hex_char_value(*it);
             if (!dig_val.has_value())
-                return { it, "Invalid hex char" };
+                return { it, make_error_code(json_error::invalid_hex_char) };
             hex_val |= static_cast<uint16_t>(dig_val.value() << ((3 - i) << 2));
         }
 
@@ -371,7 +379,7 @@ protected:
             *out_it++ = static_cast<char>(b3);
         }
 
-        return { it, std::nullopt };
+        return { it };
     }
 
     // Parse a string
@@ -396,7 +404,7 @@ protected:
             }
             if (last_char != '\\') {
                 if (*it == '"')
-                    return { std::move(s), { ++it, std::nullopt } };
+                    return { std::move(s), ParseResult{ ++it } };
                 s.append(1, *it);
                 last_char = *it;
                 continue;
@@ -411,19 +419,18 @@ protected:
             case 't': s.append(1, '\t'); break;
             case 'u': { // Parse uXXXX -> U+XXXX
                 auto res = parse_unicode_point(++it, last, std::back_inserter(s));
-                if (res.error_str)
+                if (!res)
                     return std::make_pair(s, res);
                 std::advance(it, 4 - 1);    // -1 because of this loop (++it) MOOMOO FIXME (single pass iterator)
                 break;
             }
             default:
-                return { std::string{}, { it, "Unknown control sequence"} };
+                return { std::string{}, { it, make_error_code(json_error::unknown_control_sequence)} };
             }
             last_char = 0;
-
         }
 
-        return { std::string{}, { last, std::string{"Unterminated string"} } };
+        return { std::string{}, { last, make_error_code(json_error::unterminated_string) } };
     }
 
     // Parse a number
@@ -448,17 +455,15 @@ protected:
         // std::from_chars wants const char* parameters, not iterators.
         // We need the pointer arithmetic here because last might be end()
         // which isn't dereferenceable.
-        const char* first_char = num_buf.data();
-        const char* last_char =  num_buf.data() + num_buf.size();
+        auto first_char = num_buf.data();
+        auto last_char  = num_buf.data() + num_buf.size();
 
         number n{};
         auto [ptr, ec] = std::from_chars(first_char, last_char, n);
-        if (ec == std::errc{})
-            return { n, { it_end, std::nullopt } };
+        if (ec != std::errc{})
+            return { n, { it_end, make_error_code(json_error::not_a_number) } };
 
-        const auto msg = (ec == std::errc::result_out_of_range)
-            ? "Number is out of range" : "Not a number";
-        return { number{}, { it_end, msg } };
+        return { n, { it_end } };
     }
 
     // Parse an object definition
@@ -486,12 +491,12 @@ protected:
 
             // Parse the string
             if (tok_res.tok != TokenType::String) {
-                ret.second.it        = tok_res.it;
-                ret.second.error_str = "Expected object name";
+                ret.second.it = tok_res.it;
+                ret.second.ec = make_error_code(json_error::expected_object_name);
                 break;
             }
             auto [name, name_res] = parse_string(tok_res.it, last);
-            if (name_res.error_str.has_value()) {
+            if (!name_res) {
                 ret.second = std::move(name_res);
                 break;
             }
@@ -499,14 +504,14 @@ protected:
             // Parse the ':'
             tok_res = next_token(name_res.it, last);
             if (tok_res.tok != TokenType::Colon) {
-                ret.second.it        = tok_res.it;
-                ret.second.error_str = "Expected ':'";
+                ret.second.it = tok_res.it;
+                ret.second.ec = make_error_code(json_error::expected_colon);
                 break;
             }
 
             // Parse the value
             auto [val, val_res] = parse_value(tok_res.it, last);
-            if (val_res.error_str.has_value()) {
+            if (!val_res) {
                 ret.second = std::move(val_res);
                 break;
             }
@@ -526,8 +531,8 @@ protected:
                 continue;
             }
 
-            ret.second.it        = tok_res.it;
-            ret.second.error_str = "Unexpected token";
+            ret.second.it = tok_res.it;
+            ret.second.ec = make_error_code(json_error::unexpected_token);
             break;
         }
 
@@ -549,8 +554,8 @@ protected:
         // Bypass leading whitespace
         auto it = eat_whitespace(first, last);
         if (it == last) {
-            ret.second.it        = last;
-            ret.second.error_str = "Unterminated array";
+            ret.second.it = last;
+            ret.second.ec = make_error_code(json_error::unterminated_array);
             return ret;
         }
         if (*it == ']') {
@@ -562,7 +567,7 @@ protected:
 
             // Parse the value
             auto [val, val_res] = parse_value(it, last);
-            if (val_res.error_str.has_value()) {
+            if (!val_res) {
                 ret.second = std::move(val_res);
                 break;
             }
@@ -582,7 +587,7 @@ protected:
             }
 
             ret.second.it = tok_res.it;
-            ret.second.error_str = "Unexpected token";
+            ret.second.ec = make_error_code(json_error::unexpected_token);
             break;
         }
 
@@ -614,16 +619,16 @@ protected:
 
         case TokenType::True:
         case TokenType::False:
-            return std::make_pair(tok_type == TokenType::True, ParseResult{ it, std::nullopt });
+            return std::make_pair(tok_type == TokenType::True, ParseResult{it});
         case TokenType::Null:
-            return std::make_pair(nullptr, ParseResult{ it, std::nullopt });
+            return std::make_pair(nullptr, ParseResult{it});
 
         case TokenType::EndOfInput:
-            return std::make_pair(value{}, ParseResult{ it, std::string{ "No data" } });
+            return std::make_pair(value{}, ParseResult{it, make_error_code(json_error::unterminated_json)});
         case TokenType::NotAToken:
-            return std::make_pair(value{}, ParseResult{ it, std::string{ "Invalid JSON data" } });
+            return std::make_pair(value{}, ParseResult{ it, make_error_code(json_error::not_a_token)});
         default:
-            return std::make_pair(value{}, ParseResult{ it, std::string{ "Unexpected token" } });
+            return std::make_pair(value{}, ParseResult{ it, make_error_code(json_error::unexpected_token)});
         }
     }
 
