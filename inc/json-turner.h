@@ -38,6 +38,29 @@ public:
     /// Constructs a default object with no JSON data
     constexpr json() noexcept = default;
 
+    /// Construct with JSON data parsed from the given range
+    template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
+    json(InputIt first, Stop last, bool greedy = true)
+    {
+        if (const auto res = parse(first, last, greedy); !res)
+            throw system_error(make_error_code(res.err));
+    }
+
+    /// Construct with JSON data parsed from the given range
+    template <std::ranges::input_range R>
+    json(R&& r, bool greedy = true)
+    {
+        if (const auto res = parse(r, greedy); !res)
+            throw std::system_error(make_error_code(res.err));
+    }
+
+    /// Construct with data parsed from a NULL terminated raw string
+    json (const char* src, bool greedy = true)
+        : json(std::string_view(src), greedy)
+    { }
+
+    json (nullptr_t, bool) = delete;
+
     // -- Parsing
 
     /// The result of a parse method
@@ -46,16 +69,19 @@ public:
 
         constexpr ParseResult() = default;
 
-        constexpr ParseResult(InputIt input_it, std::error_code code = std::error_code{})
-            : it(input_it), ec(code)
+        constexpr ParseResult(InputIt input_it, json_error code = json_error{})
+            : it(input_it), err(code)
         {}
 
-        operator bool() const noexcept { return !static_cast<bool>(ec); }
+        constexpr operator bool() const noexcept { return err == json_error{}; }
 
-        InputIt             it{};   ///< End of parsed data or error spot
-        std::error_code     ec{};   ///< Offending error code, or 0
+        InputIt     it{};   ///< End of parsed data or error spot
+        json_error  err{};  ///< Offending error code, or 0
     };
 
+private:
+
+    /// Parsing context used by the parsing implementation
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
     struct ParseCtx {
 
@@ -63,16 +89,20 @@ public:
             : it_at(at), it_end(end)
         {}
 
+        /// We're empty if we have no more input
         constexpr bool empty() const noexcept
             { return it_at == it_end; }
 
+        /// We evaluate to true if we have no error
         constexpr explicit operator bool() const noexcept
             { return err == json_error{}; }
 
-        InputIt     it_at;
-        Stop        it_end;
-        json_error  err{};
+        InputIt     it_at;      ///< Current location in input
+        Stop        it_end;     ///< End if input
+        json_error  err{};      ///< Parse error, or {}
     };
+
+public:
 
     /**
      * @brief Parse JSON data in the given range
@@ -95,7 +125,7 @@ public:
         if (p_ctx && greedy && !eat_whitespace(p_ctx))
             p_ctx.err = json_error::trailing_garbage;
 
-        return ParseResult { p_ctx.it_at, make_error_code(p_ctx.err) };
+        return ParseResult { p_ctx.it_at, p_ctx.err };
     }
 
     /// Parse JSON data in the given range
@@ -105,18 +135,20 @@ public:
         return parse(std::ranges::begin(r), std::ranges::end(r), greedy);
     }
 
-    std::error_code parse_file(const std::string& pathname)
+    /// Parse from a C string
+    constexpr auto parse(const char* src, bool greedy = true)
     {
-        try {
-            std::ifstream ifs(pathname);
-            ifs.exceptions(ifs.failbit | ifs.badbit);
-            auto if_begin = std::istreambuf_iterator<char>{ifs};
-            auto if_end   = std::istreambuf_iterator<char>{std::default_sentinel};
-            return parse(if_begin, if_end, true).ec;
-        }
-        catch (std::ios_base::failure& e) {
-            return e.code();
-        }
+        return parse(std::string_view(src), greedy);
+    }
+
+    auto parse(nullptr_t, bool) = delete;
+
+    /// Parse data from the given input stream
+    auto parse_stream(std::istream& ifs)
+    {
+        auto if_begin = std::istreambuf_iterator<char>{ifs};
+        auto if_end   = std::istreambuf_iterator<char>{std::default_sentinel};
+        return parse(if_begin, if_end, true);
     }
 
     // -- Attributes
@@ -417,13 +449,12 @@ protected:
             case 'n': s.append(1, '\n'); break;
             case 'r': s.append(1, '\r'); break;
             case 't': s.append(1, '\t'); break;
-            case 'u': { // Parse uXXXX -> U+XXXX
+            case 'u':   // Parse uXXXX -> U+XXXX
                 ++it;
                 if (!parse_unicode_point(p_ctx, std::back_inserter(s)))
                     return s;
                 advance = false;
                 break;
-            }
             default:
                 p_ctx.err = json_error::unknown_control_sequence;
                 return std::string{};

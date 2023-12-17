@@ -12,6 +12,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <json-turner.h>
 
+#include <fstream>
+
 /*
     A lot of this test code uses raw string literals to specify JSON
     content. This makes it much easier to digest when looking at the code.
@@ -213,14 +215,12 @@ TEST_CASE ("Simple runtime parsing check (Greediness)" "[parsing]") {
     json uut;
 
     SECTION ("Greedy: Trailing whitespace is okay") {
-        const auto parse_res = uut.parse("{}    ", true);
-        REQUIRE(static_cast<bool>(parse_res) == true);
+        REQUIRE(uut.parse("{}    ", true));
         REQUIRE(uut.get_value().is_object());
     }
 
     SECTION ("Non-greedy: Trailing whitespace is okay") {
-        const auto parse_res = uut.parse("{}    ", false);
-        REQUIRE(static_cast<bool>(parse_res) == true);
+        REQUIRE(uut.parse("{}    ", false));
         REQUIRE(uut.get_value().is_object());
     }
 
@@ -250,5 +250,35 @@ TEST_CASE ("Simple runtime parsing check (Greediness)" "[parsing]") {
         REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
         REQUIRE(*parse_res.it == ' ');        // Non-greedy so we should be at first space
+    }
+}
+
+TEST_CASE ("Input stream parsing check" "[parsing]") {
+
+    json uut;
+
+    std::ifstream ifs("sample.json");
+    REQUIRE(ifs.is_open());
+    REQUIRE(uut.parse_stream(ifs));
+}
+
+TEST_CASE ("Parsing from common string-like sources" "[parsing]") {
+
+    static const char* raw_json_source = "{ \"Pink Fluid\" : \"Pigs (Three Different Ones)\" }";
+
+    json uut;
+
+    SECTION("Raw C string") {
+        REQUIRE(uut.parse(raw_json_source));
+    }
+
+    SECTION("Parse std::string") {
+        std::string src(raw_json_source);
+        REQUIRE(uut.parse(src));
+    }
+
+    SECTION("Parse std::string_view") {
+        std::string_view src(raw_json_source);
+        REQUIRE(uut.parse(src));
     }
 }
