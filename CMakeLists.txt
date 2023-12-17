@@ -12,6 +12,7 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     message("${PROJECT_NAME} version: ${PROJECT_VERSION}")
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
     set(TURNER_IS_MASTER_PROJECT ON)
+    set(CMAKE_CXX_FLAGS_RELEASE -O3)
 endif()
 
 add_library(turner INTERFACE)

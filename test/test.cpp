@@ -29,31 +29,24 @@ TEST_CASE ("Default construction", "[construction]") {
     REQUIRE (default_constructed.is_valid() == false);
 }
 
-// Simple check the JSON input parses successfully
-static bool test_runtime_parse(json& uut, std::string_view json_input)
-{
-    auto [it, ec] = uut.parse(json_input);
-    return ec == std::errc{};
-}
-
 TEST_CASE ("Simple runtime parsing check" "[parsing]") {
 
     json uut;
 
     SECTION ("Parse true") {
-        REQUIRE (test_runtime_parse(uut, "true"));
+        REQUIRE (uut.parse("true"));
         REQUIRE (uut.get_value().is_bool());
         REQUIRE (uut.get_value().get_bool() == true);
     }
 
     SECTION ("Parse false") {
-        REQUIRE (test_runtime_parse(uut, "false"));
+        REQUIRE (uut.parse("false"));
         REQUIRE (uut.get_value().is_bool());
         REQUIRE (uut.get_value().get_bool() == false);
     }
 
     SECTION ("Parse null") {
-        REQUIRE (test_runtime_parse(uut, "null"));
+        REQUIRE (uut.parse("null"));
         REQUIRE (uut.get_value().is_null());
         REQUIRE (uut.get_value().get_null() == nullptr);
     }
@@ -62,91 +55,91 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
 
     // -- Numbers
     SECTION ("Parse numbers: Zero") {
-        REQUIRE (test_runtime_parse(uut, "0"));
+        REQUIRE (uut.parse("0"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, 0.001));
     }
     SECTION ("Parse numbers: Integer") {
-        REQUIRE (test_runtime_parse(uut, "42"));
+        REQUIRE (uut.parse("42"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(42, 0.001));
     }
     SECTION ("Parse numbers: Negative number") {
-        REQUIRE (test_runtime_parse(uut, "-10"));
+        REQUIRE (uut.parse("-10"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(-10, 0.001));
     }
     SECTION ("Parse numbers: Floating-point") {
-        REQUIRE (test_runtime_parse(uut, "3.14159"));
+        REQUIRE (uut.parse("3.14159"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(3.14159, 0.001));
     }
     SECTION ("Parse numbers: Scientific notation with positive exponent") {
-        REQUIRE (test_runtime_parse(uut, "2.5e3"));
+        REQUIRE (uut.parse("2.5e3"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(2.5e3, 0.001));
     }
     SECTION ("Parse numbers: Leading zero in a fraction") {
-        REQUIRE (test_runtime_parse(uut, "0.25"));
+        REQUIRE (uut.parse("0.25"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0.25, 0.001));
     }
     SECTION ("Parse numbers: Negative zero") {
-        REQUIRE (test_runtime_parse(uut, "-0"));
+        REQUIRE (uut.parse("-0"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, 0.001));
     }
     SECTION ("Parse numbers: Scientific notation with negative exponent") {
-        REQUIRE (test_runtime_parse(uut, "6.022e-23"));
+        REQUIRE (uut.parse("6.022e-23"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(6.022e-23, 0.001));
     }
 
     // -- Strings
     SECTION ("Parse strings: Basic string") {
-        REQUIRE (test_runtime_parse(uut, R"|("Hello, world!")|"));
+        REQUIRE (uut.parse(R"|("Hello, world!")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "Hello, world!");
     }
     SECTION ("Parse strings: String with Escape Characters") {
-        REQUIRE (test_runtime_parse(uut, R"|("This is a line break:\nSecond line.")|"));
+        REQUIRE (uut.parse(R"|("This is a line break:\nSecond line.")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "This is a line break:\nSecond line.");
     }
     SECTION ("Parse strings: String with Unicode Characters") {
-        REQUIRE (test_runtime_parse(uut, R"|("Unicode character: \u00E9")|"));
+        REQUIRE (uut.parse(R"|("Unicode character: \u00E9")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "Unicode character: \u00E9");
     }
     SECTION ("Parse strings: Empty String") {
-        REQUIRE (test_runtime_parse(uut, R"|("")|"));
+        REQUIRE (uut.parse(R"|("")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string().empty());
     }
     SECTION ("Parse strings: String with Double Quotes") {
-        REQUIRE (test_runtime_parse(uut, R"|("Quoted string: \"This is in quotes.\"")|"));
+        REQUIRE (uut.parse(R"|("Quoted string: \"This is in quotes.\"")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "Quoted string: \"This is in quotes.\"");
     }
     SECTION ("Parse strings: String with Backslashes") {
-        REQUIRE (test_runtime_parse(uut, R"|("C:\\Path\\To\\File")|"));
+        REQUIRE (uut.parse(R"|("C:\\Path\\To\\File")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "C:\\Path\\To\\File");
     }
     SECTION ("Parse strings: String with Leading and Trailing Whitespace") {
-        REQUIRE (test_runtime_parse(uut, R"|("   Trimmed string   ")|"));
+        REQUIRE (uut.parse(R"|("   Trimmed string   ")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "   Trimmed string   ");
     }
 
     // -- Objects
     SECTION ("Parse objects: Empty object") {
-        REQUIRE (test_runtime_parse(uut, R"|({})|"));
+        REQUIRE (uut.parse(R"|({})|"));
         REQUIRE (uut.get_value().is_object());
         REQUIRE (uut.get_value().get_object()->empty());
     }
     SECTION ("Parse objects: Basic object") {
-        REQUIRE (test_runtime_parse(uut, R"|({"name":"John Doe","age":30,"city":"New York"})|"));
+        REQUIRE (uut.parse(R"|({"name":"John Doe","age":30,"city":"New York"})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
         REQUIRE (obj->size() == 3);
@@ -155,7 +148,7 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
         REQUIRE (obj->contains("city"));
     }
     SECTION ("Parse objects: Nested object") {
-        REQUIRE (test_runtime_parse(uut, R"|({"person":{"name":"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|"));
+        REQUIRE (uut.parse(R"|({"person":{"name":"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
         REQUIRE (obj->size() == 2);
@@ -163,17 +156,17 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
         REQUIRE (obj->contains("person"));
     }
     SECTION ("Parse objects: Array of objects") {
-        REQUIRE (test_runtime_parse(uut, R"|([{"id":1,"name":"Item 1"},{"id":2,"name":"Item 2"},{"id":3,"name":"Item 3"}])|"));
+        REQUIRE (uut.parse(R"|([{"id":1,"name":"Item 1"},{"id":2,"name":"Item 2"},{"id":3,"name":"Item 3"}])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 3);
     }
     SECTION ("Parse objects: Object with Array Property") {
-        REQUIRE (test_runtime_parse(uut, R"|({"colors":["red","green","blue"],"status":"active"})|"));
+        REQUIRE (uut.parse(R"|({"colors":["red","green","blue"],"status":"active"})|"));
         REQUIRE (uut.get_value().is_object());
         REQUIRE (uut.get_value().get_object()->size() == 2);
     }
     SECTION ("Parse objects: Boolean and null values") {
-        REQUIRE (test_runtime_parse(uut, R"|({"isStudent":true,"hasCar":false,"grades":null})|"));
+        REQUIRE (uut.parse(R"|({"isStudent":true,"hasCar":false,"grades":null})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
         REQUIRE (obj->size() == 3);
@@ -184,32 +177,32 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
 
     // -- Arrays
     SECTION ("Parse arrays: Empty array") {
-        REQUIRE (test_runtime_parse(uut, R"|([])|"));
+        REQUIRE (uut.parse(R"|([])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->empty());
     }
     SECTION ("Parse arrays: Basic array") {
-        REQUIRE (test_runtime_parse(uut, R"|(["apple", "banana", "orange"])|"));
+        REQUIRE (uut.parse(R"|(["apple", "banana", "orange"])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 3);
     }
     SECTION ("Parse arrays: Array of numbers") {
-        REQUIRE (test_runtime_parse(uut, R"|([42, 3.14, -7, 0])|"));
+        REQUIRE (uut.parse(R"|([42, 3.14, -7, 0])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 4);
     }
     SECTION ("Parse arrays: Array of objects") {
-        REQUIRE (test_runtime_parse(uut, R"|([{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}, {"id": 3, "name": "Item 3"}])|"));
+        REQUIRE (uut.parse(R"|([{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}, {"id": 3, "name": "Item 3"}])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 3);
     }
     SECTION ("Parse arrays: Nested arrays") {
-        REQUIRE (test_runtime_parse(uut, R"|([[1, 2, 3], ["a", "b", "c"], [true, false, null]])|"));
+        REQUIRE (uut.parse(R"|([[1, 2, 3], ["a", "b", "c"], [true, false, null]])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 3);
     }
     SECTION ("Parse arrays: Array with mixed types") {
-        REQUIRE (test_runtime_parse(uut, R"|(["John Doe", 30, true, null])|"));
+        REQUIRE (uut.parse(R"|(["John Doe", 30, true, null])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 4);
     }

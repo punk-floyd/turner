@@ -50,11 +50,28 @@ public:
             : it(input_it), ec(code)
         {}
 
-        explicit operator bool() const noexcept { return !static_cast<bool>(ec); }
+        operator bool() const noexcept { return !static_cast<bool>(ec); }
 
-        /// Points to location just after the end of the parsed data (or up to parse error)
-        InputIt             it{};
-        std::error_code     ec{};
+        InputIt             it{};   ///< End of parsed data or error spot
+        std::error_code     ec{};   ///< Offending error code, or 0
+    };
+
+    template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
+    struct ParseCtx {
+
+        constexpr ParseCtx(InputIt at, Stop end) noexcept
+            : it_at(at), it_end(end)
+        {}
+
+        constexpr bool empty() const noexcept
+            { return it_at == it_end; }
+
+        constexpr explicit operator bool() const noexcept
+            { return err == json_error{}; }
+
+        InputIt     it_at;
+        Stop        it_end;
+        json_error  err{};
     };
 
     /**
@@ -69,18 +86,16 @@ public:
      * @return Returns a ParseResult containing parse results; @see ParseResult
      */
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr auto parse(InputIt first, Stop last, bool greedy = true) -> ParseResult<InputIt>
+    constexpr auto parse(InputIt first, Stop last, bool greedy = true)
+        -> ParseResult<InputIt>
     {
-        auto [val, parse_res] = parse_value(first, last);
-        _value = std::move(val);
+        ParseCtx p_ctx{first, last};
+        _value = parse_value(p_ctx);
 
-        if (parse_res && greedy) {
-            parse_res.it = eat_whitespace(parse_res.it, last);
-            if (parse_res.it != last)
-                parse_res.ec = json_error::trailing_garbage;
-        }
+        if (p_ctx && greedy && !eat_whitespace(p_ctx))
+            p_ctx.err = json_error::trailing_garbage;
 
-        return parse_res;
+        return ParseResult { p_ctx.it_at, make_error_code(p_ctx.err) };
     }
 
     /// Parse JSON data in the given range
@@ -90,7 +105,6 @@ public:
         return parse(std::ranges::begin(r), std::ranges::end(r), greedy);
     }
 
-#if 1
     std::error_code parse_file(const std::string& pathname)
     {
         try {
@@ -98,17 +112,12 @@ public:
             ifs.exceptions(ifs.failbit | ifs.badbit);
             auto if_begin = std::istreambuf_iterator<char>{ifs};
             auto if_end   = std::istreambuf_iterator<char>{std::default_sentinel};
-            auto parse_res = parse(if_begin, if_end, true);
-            if (!parse_res)
-                return std::make_error_code(std::errc::argument_out_of_domain);   // MOOMOO fixme
+            return parse(if_begin, if_end, true).ec;
         }
         catch (std::ios_base::failure& e) {
             return e.code();
         }
-
-        return {};
     }
-#endif
 
     // -- Attributes
 
@@ -265,34 +274,26 @@ protected:
         String, Number, True, False, Null
     };
 
-    template <std::input_iterator InputIt>
-    struct TokenResult {
-        InputIt     it;
-        TokenType   tok;
-    };
-
     // Extract the next token from the input stream
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr static auto next_token(InputIt first, Stop last) -> TokenResult<InputIt>
+    [[nodiscard]] constexpr TokenType next_token(ParseCtx<InputIt, Stop>& p_ctx) const noexcept
     {
         // Try to match against a keyword token: "true", "false", or "null"
-        const auto try_match = [](InputIt it, Stop tm_last, std::string_view word, TokenType t)
+        const auto try_match = [&p_ctx](std::string_view word, TokenType t) noexcept
         {
             auto wit = word.begin();
-            auto cit = it;
-            for (; (cit != tm_last) && (wit != word.end()) && (*cit == *wit); ++cit, ++wit);
+            for (; !p_ctx.empty() && (wit != word.end()) && (*p_ctx.it_at == *wit); ++p_ctx.it_at, ++wit);
             if (wit == word.end())
-                return TokenResult{ cit, t };
+                return t;
 
-            return TokenResult{ it, TokenType::NotAToken };
+            return TokenType::NotAToken;
         };
 
         // Bypass leading whitespace
-        auto it = eat_whitespace(first, last);
-        if (it == last)
-            return { last, TokenType::EndOfInput };
+        if (eat_whitespace(p_ctx))
+            return TokenType::EndOfInput;
 
-        switch (*it) {
+        switch (*p_ctx.it_at) {
         case '0':
         case '1':
         case '2':
@@ -303,20 +304,20 @@ protected:
         case '7':
         case '8':
         case '9':
-        case '-': return {   it, TokenType::Number };
-        case '"': return { ++it, TokenType::String };
-        case ':': return { ++it, TokenType::Colon };
-        case ',': return { ++it, TokenType::Comma };
-        case 't': return try_match(it, last, "true",  TokenType::True);
-        case 'f': return try_match(it, last, "false", TokenType::False);
-        case 'n': return try_match(it, last, "null",  TokenType::Null);
-        case '{': return { ++it, TokenType::ObjectStart };
-        case '}': return { ++it, TokenType::ObjectEnd };
-        case '[': return { ++it, TokenType::ArrayStart };
-        case ']': return { ++it, TokenType::ArrayEnd };
+        case '-': return TokenType::Number;
+        case '"': ++p_ctx.it_at; return TokenType::String;
+        case ':': ++p_ctx.it_at; return TokenType::Colon;
+        case ',': ++p_ctx.it_at; return TokenType::Comma;
+        case 't': return try_match("true",  TokenType::True);
+        case 'f': return try_match("false", TokenType::False);
+        case 'n': return try_match("null",  TokenType::Null);
+        case '{': ++p_ctx.it_at; return TokenType::ObjectStart;
+        case '}': ++p_ctx.it_at; return TokenType::ObjectEnd;
+        case '[': ++p_ctx.it_at; return TokenType::ArrayStart;
+        case ']': ++p_ctx.it_at; return TokenType::ArrayEnd;
         }
 
-        return { it, TokenType::NotAToken };
+        return TokenType::NotAToken;
     }
 
     constexpr static inline bool is_whitespace(int ch) noexcept
@@ -324,23 +325,17 @@ protected:
         return (ch == ' ') || (ch == '\n') || (ch == '\r') || (ch == '\t') || (ch == 0);
     }
 
-    // Consume whitespace
+    // Consume whitespace; returns true if we have no more input
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr static inline auto eat_whitespace(InputIt first, Stop last) noexcept
-        -> InputIt
+    constexpr inline bool eat_whitespace(ParseCtx<InputIt, Stop>& p_ctx) const noexcept
     {
-        auto it = first;
-        for (; (it != last) && is_whitespace(*it); ++it);
-        return it;
+        for (; !p_ctx.empty() && is_whitespace(*p_ctx.it_at); ++p_ctx.it_at);
+        return p_ctx.empty();
     }
-
-    template <typename T, std::input_iterator InputIt>
-    using InternalParseResult = std::pair<T, ParseResult<InputIt>>;
 
     /// Parse an explicit unicode point from JSON string: \uXXXX
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop, std::output_iterator<char> OutputIt>
-    [[nodiscard]] constexpr static auto parse_unicode_point(InputIt first, Stop last, OutputIt&& out_it)
-        -> ParseResult<InputIt>
+    constexpr bool parse_unicode_point(ParseCtx<InputIt, Stop>& p_ctx, OutputIt&& out_it) const
     {
         const auto hex_char_value = [](char ch) -> std::optional<uint16_t> {
             if ((ch >= '0') && (ch <= '9')) return  0 + (ch - '0');
@@ -349,14 +344,16 @@ protected:
             return std::nullopt;
         };
 
-        auto it = first;
+        auto& it = p_ctx.it_at;
 
         // Read in four hex digits
         uint16_t hex_val{};
-        for (size_t i = 0; (it != last) && (i < 4); ++it,++i) {
+        for (size_t i = 0; (it != p_ctx.it_end) && (i < 4); ++it,++i) {
             auto dig_val = hex_char_value(*it);
-            if (!dig_val.has_value())
-                return { it, make_error_code(json_error::invalid_hex_char) };
+            if (!dig_val.has_value()) {
+                p_ctx.err = json_error::invalid_hex_char;
+                return false;
+            }
             hex_val |= static_cast<uint16_t>(dig_val.value() << ((3 - i) << 2));
         }
 
@@ -379,19 +376,20 @@ protected:
             *out_it++ = static_cast<char>(b3);
         }
 
-        return { it };
+        return true;
     }
 
     // Parse a string
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]]  static auto parse_string(InputIt first, Stop last)
-        -> InternalParseResult<string, InputIt>
+    [[nodiscard]] constexpr string parse_string(ParseCtx<InputIt, Stop>& p_ctx) const
     {
-        auto it = first;
+        auto& it = p_ctx.it_at;
         string s{};
         char last_char{};
 
-        for (; it != last; ++it) {
+        for (bool advance = true; !p_ctx.empty(); advance ? ++it : it) {
+            advance = true;
+
             if (*it == '\\') {
                 if (last_char == '\\') {
                     s.append(1, '\\');
@@ -403,8 +401,10 @@ protected:
                 continue;
             }
             if (last_char != '\\') {
-                if (*it == '"')
-                    return { std::move(s), ParseResult{ ++it } };
+                if (*it == '"') {
+                    it++;
+                    return s;
+                }
                 s.append(1, *it);
                 last_char = *it;
                 continue;
@@ -418,38 +418,38 @@ protected:
             case 'r': s.append(1, '\r'); break;
             case 't': s.append(1, '\t'); break;
             case 'u': { // Parse uXXXX -> U+XXXX
-                auto res = parse_unicode_point(++it, last, std::back_inserter(s));
-                if (!res)
-                    return std::make_pair(s, res);
-                std::advance(it, 4 - 1);    // -1 because of this loop (++it) MOOMOO FIXME (single pass iterator)
+                ++it;
+                if (!parse_unicode_point(p_ctx, std::back_inserter(s)))
+                    return s;
+                advance = false;
                 break;
             }
             default:
-                return { std::string{}, { it, make_error_code(json_error::unknown_control_sequence)} };
+                p_ctx.err = json_error::unknown_control_sequence;
+                return std::string{};
             }
             last_char = 0;
         }
 
-        return { std::string{}, { last, make_error_code(json_error::unterminated_string) } };
+        p_ctx.err = json_error::unterminated_string;
+        return std::string{};
     }
 
     // Parse a number
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr static auto parse_number(InputIt first, Stop last)
-        -> InternalParseResult<number, InputIt>
+    [[nodiscard]] constexpr number parse_number(ParseCtx<InputIt, Stop>& p_ctx) const
     {
         // We may be dealing with a single pass iterator and there's no
         // reliable upper bound on the length of the input string so we'll
         // need to buffer the data. Grab everything up to the next delimiter
         // and then parse the whole chunk.
         std::string num_buf;
-        auto it_end = first;
-        for (; it_end != last; ++it_end) {
-            if (is_whitespace(*it_end))
+        for (; p_ctx.it_at != p_ctx.it_end; ++p_ctx.it_at) {
+            if (is_whitespace(*p_ctx.it_at))
                 break;
-            if ((*it_end == ',') || (*it_end == '}') || (*it_end == ']'))
+            if ((*p_ctx.it_at == ',') || (*p_ctx.it_at == '}') || (*p_ctx.it_at == ']'))
                 break;
-            num_buf.push_back(*it_end);
+            num_buf.push_back(*p_ctx.it_at);
         }
 
         // std::from_chars wants const char* parameters, not iterators.
@@ -461,78 +461,62 @@ protected:
         number n{};
         auto [ptr, ec] = std::from_chars(first_char, last_char, n);
         if (ec != std::errc{})
-            return { n, { it_end, make_error_code(json_error::not_a_number) } };
+            p_ctx.err = json_error::not_a_number;
 
-        return { n, { it_end } };
+        return n;
     }
 
     // Parse an object definition
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr static auto parse_object(InputIt first, Stop last)
-        -> InternalParseResult<object_ptr, InputIt>
+    [[nodiscard]] constexpr object_ptr parse_object(ParseCtx<InputIt, Stop>& p_ctx) const
     {
         // The calling parser has already consumed the opening '{'
 
-        InternalParseResult<object_ptr, InputIt> ret{};
-        ret.first = std::make_unique<object>();
+        auto ret = std::make_unique<object>();
 
-        auto it = first;
         bool first_loop = true;
 
         while (1) {
 
-            auto tok_res = next_token(it, last);
+            auto token = next_token(p_ctx);
 
             // This is only valid the first time through (empty object {})
-            if (first_loop && (tok_res.tok == TokenType::ObjectEnd)) {
-                ret.second.it = tok_res.it;
+            if (first_loop && (token == TokenType::ObjectEnd))
                 break;
-            }
 
             // Parse the string
-            if (tok_res.tok != TokenType::String) {
-                ret.second.it = tok_res.it;
-                ret.second.ec = make_error_code(json_error::expected_object_name);
+            if (token != TokenType::String) {
+                p_ctx.err = json_error::expected_object_name;
                 break;
             }
-            auto [name, name_res] = parse_string(tok_res.it, last);
-            if (!name_res) {
-                ret.second = std::move(name_res);
+            auto name = parse_string(p_ctx);
+            if (!p_ctx)
                 break;
-            }
 
             // Parse the ':'
-            tok_res = next_token(name_res.it, last);
-            if (tok_res.tok != TokenType::Colon) {
-                ret.second.it = tok_res.it;
-                ret.second.ec = make_error_code(json_error::expected_colon);
+            if (TokenType::Colon != next_token(p_ctx)) {
+                p_ctx.err = json_error::expected_colon;
                 break;
             }
 
             // Parse the value
-            auto [val, val_res] = parse_value(tok_res.it, last);
-            if (!val_res) {
-                ret.second = std::move(val_res);
+            auto val = parse_value(p_ctx);
+            if (!p_ctx)
                 break;
-            }
 
             // Insert the item into the map
-            ret.first->insert(make_pair(std::move(name), std::move(val)));
+            ret->insert(make_pair(std::move(name), std::move(val)));
 
             // Next token must be ',' or '}'
-            tok_res = next_token(val_res.it, last);
-            if (tok_res.tok == TokenType::ObjectEnd) {
-                ret.second.it = tok_res.it;
+            token = next_token(p_ctx);
+            if (token == TokenType::ObjectEnd)
                 break;
-            }
-            if (tok_res.tok == TokenType::Comma) {
+            if (token == TokenType::Comma) {
                 first_loop = false;
-                it = tok_res.it;
                 continue;
             }
 
-            ret.second.it = tok_res.it;
-            ret.second.ec = make_error_code(json_error::unexpected_token);
+            p_ctx.err = json_error::unexpected_token;
             break;
         }
 
@@ -541,53 +525,42 @@ protected:
 
     // Parse an object definition
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr static auto parse_array(InputIt first, Stop last)
-        -> InternalParseResult<array_ptr, InputIt>
+    [[nodiscard]] constexpr array_ptr parse_array(ParseCtx<InputIt, Stop>& p_ctx) const
     {
         // The calling parser has already consumed the opening '['
 
-        InternalParseResult<array_ptr, InputIt> ret{};
-        ret.first = std::make_unique<array>();
+        auto ret = std::make_unique<array>();
 
         // First check for any empty array. This will simplify the general case below
 
         // Bypass leading whitespace
-        auto it = eat_whitespace(first, last);
-        if (it == last) {
-            ret.second.it = last;
-            ret.second.ec = make_error_code(json_error::unterminated_array);
+        if (eat_whitespace(p_ctx)) {
+            p_ctx.err = json_error::unterminated_array;
             return ret;
         }
-        if (*it == ']') {
-            ret.second.it = ++it;
+        if (*p_ctx.it_at == ']') {
+            p_ctx.it_at++;
             return ret;
         }
 
         while (1) {
 
             // Parse the value
-            auto [val, val_res] = parse_value(it, last);
-            if (!val_res) {
-                ret.second = std::move(val_res);
+            auto val = parse_value(p_ctx);
+            if (!p_ctx)
                 break;
-            }
 
             // Append to the array
-            ret.first->push_back(std::move(val));
+            ret->push_back(std::move(val));
 
             // Next token must be ',' or ']'
-            const auto tok_res = next_token(val_res.it, last);
-            if (tok_res.tok == TokenType::ArrayEnd) {
-                ret.second.it = tok_res.it;
+            const auto token = next_token(p_ctx);
+            if (token == TokenType::ArrayEnd)
                 break;
-            }
-            if (tok_res.tok == TokenType::Comma) {
-                it = tok_res.it;
+            if (token == TokenType::Comma)
                 continue;
-            }
 
-            ret.second.it = tok_res.it;
-            ret.second.ec = make_error_code(json_error::unexpected_token);
+            p_ctx.err = json_error::unexpected_token;
             break;
         }
 
@@ -595,40 +568,26 @@ protected:
     }
 
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr static auto parse_value(InputIt first, Stop last)
-        -> InternalParseResult<value, InputIt>
+    [[nodiscard]] constexpr value parse_value(ParseCtx<InputIt, Stop>& p_ctx) const
     {
-        switch (auto [it, tok_type] = next_token(first, last); tok_type) {
-
-        case TokenType::ObjectStart: {
-            auto [obj_ptr, parse_res] = parse_object(it, last);
-            return std::make_pair(std::move(obj_ptr), parse_res);
-        }
-        case TokenType::ArrayStart: {
-            auto [arr_ptr, parse_res] = parse_array(it, last);
-            return std::make_pair(std::move(arr_ptr), parse_res);
-        }
-        case TokenType::String: {
-            auto [str, parse_res] = parse_string(it, last);
-            return std::make_pair(std::move(str), parse_res);
-        }
-        case TokenType::Number: {
-            auto [num, parse_res] = parse_number(it, last);
-            return std::make_pair(num, parse_res);
-        }
-
-        case TokenType::True:
-        case TokenType::False:
-            return std::make_pair(tok_type == TokenType::True, ParseResult{it});
-        case TokenType::Null:
-            return std::make_pair(nullptr, ParseResult{it});
+        switch (next_token(p_ctx)) {
+        case TokenType::ObjectStart: return parse_object(p_ctx);
+        case TokenType::ArrayStart:  return parse_array(p_ctx);
+        case TokenType::String:      return parse_string(p_ctx);
+        case TokenType::Number:      return parse_number(p_ctx);
+        case TokenType::True:        return true;
+        case TokenType::False:       return false;
+        case TokenType::Null:        return nullptr;
 
         case TokenType::EndOfInput:
-            return std::make_pair(value{}, ParseResult{it, make_error_code(json_error::unterminated_json)});
+            p_ctx.err = json_error::unterminated_json;
+            return {};
         case TokenType::NotAToken:
-            return std::make_pair(value{}, ParseResult{ it, make_error_code(json_error::not_a_token)});
+            p_ctx.err = json_error::not_a_token;
+            return {};
         default:
-            return std::make_pair(value{}, ParseResult{ it, make_error_code(json_error::unexpected_token)});
+            p_ctx.err = json_error::unexpected_token;
+            return {};
         }
     }
 
