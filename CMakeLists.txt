@@ -20,7 +20,7 @@ target_include_directories(turner INTERFACE inc)
 set_target_properties(turner PROPERTIES CXX_STANDARD 20)
 
 option(TURNER_TESTS     "Generate tests"        ${TURNER_IS_MASTER_PROJECT})
-option(TURNER_UTILS     "Generate utilities"    ${TURNER_IS_MASTER_PROJECT})
+option(TURNER_EXAMPLES  "Generate examples"     ${TURNER_IS_MASTER_PROJECT})
 #ption(TURNER_MODULE    "Build as a module"     OFF)
 
 if (TURNER_TESTS)
@@ -28,6 +28,6 @@ if (TURNER_TESTS)
     add_subdirectory(test)
 endif()
 
-if (TURNER_UTILS)
-    add_subdirectory(utils)
+if (TURNER_EXAMPLES)
+    add_subdirectory(examples)
 endif()

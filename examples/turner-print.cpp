@@ -8,7 +8,7 @@
  *
  */
 #include <iostream>
-#include <json-turner.h>
+#include <turner/json.h>
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {

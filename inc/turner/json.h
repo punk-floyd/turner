@@ -25,7 +25,7 @@
 #include <memory>
 #include <map>
 
-#include "json-turner-error.h"
+#include "json-error.h"
 
 namespace turner {
 
