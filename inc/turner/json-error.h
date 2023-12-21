@@ -1,5 +1,5 @@
 /**
- * @file    json-turner-error.h
+ * @file    json-error.h
  * @author  Mike DeKoker (dekoker.mike@gmail.com)
  * @brief   std::error_code and friends support
  * @date    2023-12-11

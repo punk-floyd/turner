@@ -1,5 +1,5 @@
 /**
- * @file    json-turner.h
+ * @file    json.h
  * @author  Mike DeKoker (dekoker.mike@gmail.com)
  * @brief   C++20 UTF-8 JSON parsing library
  * @date    2023-11-30
@@ -22,6 +22,7 @@
 #include <ranges>
 #include <string>
 #include <vector>
+#include <limits>
 #include <memory>
 #include <map>
 
@@ -251,7 +252,192 @@ public:
         inline constexpr bool is() const noexcept
             { return std::holds_alternative<T>(*this); }
 
+        // -- Encoding
+
+        /// JSON encode value to an output iterator
+        template <std::output_iterator<char> OutputIt>
+        constexpr inline auto encode(OutputIt it) const -> OutputIt
+        {
+            return encode_value(*this, it);
+        }
+
+        /// JSON encode value to a string
+        std::string inline encode() const
+        {
+            std::string s;
+            encode(std::back_inserter(s));
+            return s;
+        }
+
+        // -- Encoding implementation --------------------------------------
+
+        /// JSON-encode the given value to the given output iterator
+        template <std::output_iterator<char> OutputIt>
+        static constexpr inline auto encode_value (const value& val, OutputIt it) -> OutputIt
+        {
+            const auto visitor = [it](const auto& v) -> OutputIt {
+                if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object_ptr>)
+                    return encode_object(v, it);
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array_ptr>)
+                    return encode_array(v, it);
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, string>)
+                    return encode_string(v, it);
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, number>)
+                    return encode_number(v, it);
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, bool>)
+                    return encode_literal(v ? "true" : "false", it);
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, nullptr_t>)
+                    return encode_literal("null", it);
+                else
+                    return it;
+            };
+
+            return std::visit(visitor, static_cast<const value_variant&>(val));
+        }
+
+        /// JSON-encode the given object to the given output iterator
+        template <std::output_iterator<char> OutputIt>
+        static constexpr auto encode_object(const object_ptr& val, OutputIt it) -> OutputIt
+        {
+            *it++ = '{';
+
+            for (bool first = true; const auto& [mem_key,mem_val] : *val.get()) {
+                if (first)
+                    first = false;
+                else
+                    *it++ = ',';
+
+                it = encode_string(mem_key, it);
+                *it++ = ':';
+                it = encode_value(mem_val, it);
+            }
+
+            *it++ = '}';
+
+            return it;
+        }
+
+        /// JSON-encode the given array to the given output iterator
+        template <std::output_iterator<char> OutputIt>
+        static constexpr auto encode_array(const array_ptr& val, OutputIt it) -> OutputIt
+        {
+            *it++ = '[';
+
+            for (bool first = true; const auto& e : *val.get()) {
+                if (first)
+                    first = false;
+                else
+                    *it++ = ',';
+
+                it = encode_value(e, it);
+            }
+
+            *it++ = ']';
+
+            return it;
+        }
+
+        /// JSON-encode the given string to the given output iterator
+        template <std::output_iterator<char> OutputIt>
+        static constexpr auto encode_string(const string& val, OutputIt it) -> OutputIt
+        {
+            *it++ = '\"';
+
+            for (const auto& c : val) {
+
+                // Must escape double quote -> \" <-
+                if (c == '"') {
+                    *it++ = '\\';
+                    *it++ = '"';
+                }
+                // Must escape reverse solidus -> \\ <-
+                else if (c == '\\') {
+                    *it++ = '\\';
+                    *it++ = '\\';
+                }
+                // Must escape control codes -> \u00XX <-
+                else if ((c >= 0) && (c <= 0x1F)) {
+                    *it++ = '\\';
+                    *it++ = 'u';
+                    *it++ = '0';
+                    *it++ = '0';
+                    *it++ = (c & 0x10) ? '1' : '0';
+                    const auto nibble = c & 0xF;
+                    *it++ = (nibble < 10)
+                        ? static_cast<char>('0' + nibble)
+                        : static_cast<char>('A' + nibble - 10);
+                }
+                // Everything else is passed thru
+                else
+                    *it++ = c;
+            }
+
+            *it++ = '\"';
+
+            return it;
+        }
+
+        /// JSON-encode the given number to the given output iterator
+        template <std::output_iterator<char> OutputIt>
+        static constexpr auto encode_number(const number& val, OutputIt it) -> OutputIt
+        {
+            constexpr auto buf_len = std::numeric_limits<double>::max_digits10 + 8;
+
+            // MDTODO : What about NAN and INF? Not valid JSON. return null?
+            //          Extension to allow "NaN" etc?
+
+            char buf[buf_len]{};
+            const auto [ptr, ec] = std::to_chars(buf, buf + buf_len, val);
+            for (const char* p = buf; p != ptr; *it++ = *p++);
+
+            return it;
+        }
+
+        /// JSON-encode the given literal string to the given output iterator
+        template <std::output_iterator<char> OutputIt>
+        static constexpr inline auto encode_literal(std::string_view literal, OutputIt it) -> OutputIt
+        {
+            for (auto c : literal)
+                *it++ = c;
+
+            return it;
+        }
+
+        // -- Implementation
+
+        // Gang of five. Moving and copying okay, but we need custom copying
+        // because std::unique_ptr isn't copyable.
+
+        ~value() = default;
+        value(value&&) noexcept             = default;
+        value& operator=(value&&) noexcept  = default;
+
+        value(const value& other)
+            : value_variant(value_variant_deep_copy(other))
+        {}
+
+        value& operator=(const value& other)
+        {
+            static_cast<value_variant&>(*this) = value_variant_deep_copy(other);
+            return *this;
+        }
+
     private:
+
+        // Return a copy of the given value_variant
+        value_variant value_variant_deep_copy(const value_variant& other)
+        {
+            auto deep_copy = [](const auto& v) -> value_variant {
+                if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object_ptr>)
+                    return std::make_unique<object>(*v.get());
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array_ptr>)
+                    return std::make_unique<array>(*v.get());
+                else
+                    return v;
+            };
+
+            return std::visit(deep_copy, other);
+        }
 
         // I'd use a concept here, but we can't forward declare an inner class
         // and I'd like to keep everything tucked into the class.
@@ -298,6 +484,8 @@ public:
     class array  : public std::vector<value> {};
 
 protected:
+
+    // -- Parsing ----------------------------------------------------------
 
     // Defines a token type
     enum class TokenType {
