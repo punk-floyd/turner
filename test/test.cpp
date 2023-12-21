@@ -268,7 +268,11 @@ TEST_CASE ("Parsing from common string-like sources" "[parsing]") {
 
     json uut;
 
-    SECTION("Raw C string") {
+    SECTION("string literal") {
+        REQUIRE(uut.parse("{ \"Pink Fluid\" : \"Pigs (Three Different Ones)\" }"));
+    }
+
+    SECTION("const char* string") {
         REQUIRE(uut.parse(raw_json_source));
     }
 
@@ -280,5 +284,39 @@ TEST_CASE ("Parsing from common string-like sources" "[parsing]") {
     SECTION("Parse std::string_view") {
         std::string_view src(raw_json_source);
         REQUIRE(uut.parse(src));
+    }
+}
+
+TEST_CASE ("JSON encoding" "[encoding]") {
+
+    SECTION("Encode literals") {
+        REQUIRE(json::value{true}.encode()    == "true");
+        REQUIRE(json::value{false}.encode()   == "false");
+        REQUIRE(json::value{nullptr}.encode() == "null");
+    }
+
+    SECTION("Encode numbers") {
+        REQUIRE(json::value{ 0.0}.encode() ==  "0");
+        REQUIRE(json::value{-1.0}.encode() == "-1");
+        REQUIRE(json::value{ 0.5}.encode() == "0.5");
+
+        // Large positive number
+        REQUIRE(json::value{1.23456789e+20}.encode() == "1.23456789e+20");
+        // Small positive number
+        REQUIRE(json::value{1.23456789e-20}.encode() == "1.23456789e-20");
+
+        // TODO : NaN and INF once we have a policy and a way of specifying it
+    }
+
+    SECTION("Encode string") {
+        REQUIRE(json::value{"A simple string"}.encode() == "\"A simple string\"");
+        REQUIRE(json::value{"\"double quotes\""}.encode() == "\"\\\"double quotes\\\"\"");
+        REQUIRE(json::value{"\\reverse solidus\\"}.encode() == "\"\\\\reverse solidus\\\\\"");
+        REQUIRE(json::value{"\u0001 thru \u001F"}.encode() == "\"\\u0001 thru \\u001F\"");
+        REQUIRE(json::value{"\u0041BC"}.encode() == "\"ABC\"");
+    }
+
+    SECTION("Encode array") {
+        //auto array = json::make_array({true, 1.0, "A string"});
     }
 }

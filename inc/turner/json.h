@@ -10,6 +10,7 @@
 #ifndef zzz_I_assure_you_that_json_turner_dot_h_has_been_included
 #define zzz_I_assure_you_that_json_turner_dot_h_has_been_included
 
+#include <initializer_list>
 #include <system_error>
 #include <string_view>
 #include <type_traits>
@@ -481,7 +482,31 @@ public:
     };
 
     class object : public std::map<std::string, value, std::less<>> {};
-    class array  : public std::vector<value> {};
+
+    class array  : public std::vector<value>
+    {
+#if 0
+        constexpr array() noexcept = default;
+
+        constexpr array (std::initializer_list<value> values)
+            : vector(values)
+        {}
+#endif
+    };
+
+    template <class... Values>
+        requires std::is_constructible_v<object, Values...>
+    static auto make_object(Values&&... args)
+    {
+        return std::make_unique<object>(std::forward<Values>(args)...);
+    }
+
+    template <class... Values>
+        requires std::is_constructible_v<array, Values...>
+    static auto make_array(Values&&... values)
+    {
+        return std::make_unique<array>(std::forward<Values>(values)...);
+    }
 
 protected:
 
@@ -722,6 +747,10 @@ protected:
             auto val = parse_value(p_ctx);
             if (!p_ctx)
                 break;
+
+            // TODO : What to do if named item is already in the map?
+            //        Here, we are overwriting. Might want a policy to
+            //        dictate: fail
 
             // Insert the item into the map
             ret->insert(make_pair(std::move(name), std::move(val)));
