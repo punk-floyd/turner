@@ -170,13 +170,13 @@ public:
 
     // -- JSON value types
 
-    class object;
-    class array;
-
-    using object_ptr = std::unique_ptr<object>;
-    using array_ptr = std::unique_ptr<array>;
+    using object = std::map<std::string, value, std::less<>>;
+    using array  = std::vector<value>;
     using string = std::string;
     using number = double;
+
+    using object_ptr = std::unique_ptr<object>;
+    using array_ptr  = std::unique_ptr<array>;
 
     using value_variant = std::variant <
         std::monostate, // Invalid value; used for default construction
@@ -278,9 +278,9 @@ public:
         {
             const auto visitor = [it](const auto& v) -> OutputIt {
                 if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object_ptr>)
-                    return encode_object(v, it);
+                    return encode_object(*v.get(), it);
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array_ptr>)
-                    return encode_array(v, it);
+                    return encode_array(*v.get(), it);
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, string>)
                     return encode_string(v, it);
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, number>)
@@ -298,11 +298,11 @@ public:
 
         /// JSON-encode the given object to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_object(const object_ptr& val, OutputIt it) -> OutputIt
+        static constexpr auto encode_object(const object& val, OutputIt it) -> OutputIt
         {
             *it++ = '{';
 
-            for (bool first = true; const auto& [mem_key,mem_val] : *val.get()) {
+            for (bool first = true; const auto& [mem_key,mem_val] : val) {
                 if (first)
                     first = false;
                 else
@@ -320,11 +320,11 @@ public:
 
         /// JSON-encode the given array to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_array(const array_ptr& val, OutputIt it) -> OutputIt
+        static constexpr auto encode_array(const array& val, OutputIt it) -> OutputIt
         {
             *it++ = '[';
 
-            for (bool first = true; const auto& e : *val.get()) {
+            for (bool first = true; const auto& e : val) {
                 if (first)
                     first = false;
                 else
@@ -481,31 +481,19 @@ public:
         constexpr const T* try_get() const noexcept { return std::get_if<T>(this); }
     };
 
-    class object : public std::map<std::string, value, std::less<>> {};
-
-    class array  : public std::vector<value>
+    /// Make a JSON object
+    static auto make_object()
     {
-#if 0
-        constexpr array() noexcept = default;
-
-        constexpr array (std::initializer_list<value> values)
-            : vector(values)
-        {}
-#endif
-    };
-
-    template <class... Values>
-        requires std::is_constructible_v<object, Values...>
-    static auto make_object(Values&&... args)
-    {
-        return std::make_unique<object>(std::forward<Values>(args)...);
+        return std::make_unique<object>();
     }
 
+    /// Make a JSON array populated with zero or more values
     template <class... Values>
-        requires std::is_constructible_v<array, Values...>
+        requires (std::is_constructible_v<value, Values> && ...)
     static auto make_array(Values&&... values)
     {
-        return std::make_unique<array>(std::forward<Values>(values)...);
+        return std::make_unique<array>(
+            std::initializer_list<value>{ std::forward<Values>(values)... });
     }
 
 protected:

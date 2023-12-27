@@ -317,6 +317,43 @@ TEST_CASE ("JSON encoding" "[encoding]") {
     }
 
     SECTION("Encode array") {
-        //auto array = json::make_array({true, 1.0, "A string"});
+        REQUIRE(json::value{json::make_array()}.encode() == "[]");
+
+        constexpr std::string_view encode_expect =
+            R"|([true,false,null,0,"snake",{}])|";
+
+        // Manually create an array
+        auto a_ray = json::make_array();
+        a_ray->emplace_back(true);
+        a_ray->emplace_back(false);
+        a_ray->emplace_back(nullptr);
+        a_ray->emplace_back(0.0);
+        a_ray->emplace_back("snake");
+        a_ray->emplace_back(json::make_object());
+        json::value v1{std::move(a_ray)};
+        REQUIRE(v1.encode() == encode_expect);
+
+        // Use the make_array helper
+        auto also_a_ray = json::make_array(true, false, nullptr, 0.0, "snake", json::make_object());
+        json::value v2{std::move(also_a_ray)};
+        REQUIRE(v2.encode() == encode_expect);
+    }
+
+    SECTION("Encode object") {
+        REQUIRE(json::value{json::make_object()}.encode() == "{}");
+
+        auto obj = json::make_object();
+        obj->emplace(std::make_pair("a", "dog"));
+        obj->emplace(std::make_pair("b",  0.0));
+        obj->emplace(std::make_pair("c",  nullptr));
+        obj->emplace(std::make_pair("d",  true));
+        obj->emplace(std::make_pair("e",  false));
+        obj->emplace(std::make_pair("f",  json::make_array()));
+        obj->emplace(std::make_pair("g",  json::make_object()));
+        json::value v{std::move(obj)};
+
+        constexpr std::string_view encode_expect =
+            R"|({"a":"dog","b":0,"c":null,"d":true,"e":false,"f":[],"g":{}})|";
+        REQUIRE(v.encode() == encode_expect);
     }
 }

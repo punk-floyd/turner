@@ -11,7 +11,7 @@ if (UNIX)
 endif()
 
 add_executable(turner-print turner-print.cpp)
-set_target_properties(turner-print PROPERTIES CXX_STANDARD 20)
+set_property(TARGET turner-print PROPERTY CXX_STANDARD 20)
+set_property(TARGET turner-print PROPERTY CXX_STANDARD_REQUIRED ON)
 target_link_libraries(turner-print PRIVATE turner)
 target_compile_options(turner-print PRIVATE ${TURNER_UTILS_WARNING_OPTS})
-
