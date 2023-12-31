@@ -25,6 +25,7 @@
 #include <vector>
 #include <limits>
 #include <memory>
+#include <cmath>
 #include <map>
 
 #include "json-error.h"
@@ -40,44 +41,45 @@ public:
     /// Constructs a default object with no JSON data
     constexpr json() noexcept = default;
 
-    /// Construct with JSON data parsed from the given range
+    /// Construct with JSON data decoded from the given range
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
     json(InputIt first, Stop last, bool greedy = true)
     {
-        if (const auto res = parse(first, last, greedy); !res)
+        if (const auto res = decode(first, last, greedy); !res)
             throw system_error(make_error_code(res.err));
     }
 
-    /// Construct with JSON data parsed from the given range
+    /// Construct with JSON data decoded from the given range
     template <std::ranges::input_range R>
     json(R&& r, bool greedy = true)
     {
-        if (const auto res = parse(r, greedy); !res)
+        if (const auto res = decode(r, greedy); !res)
             throw std::system_error(make_error_code(res.err));
     }
 
-    /// Construct with data parsed from a NULL terminated raw string
+    /// Construct with JSON data decoded from a NULL terminated raw string
     json (const char* src, bool greedy = true)
         : json(std::string_view(src), greedy)
     { }
 
     json (nullptr_t, bool) = delete;
 
-    // -- Parsing
+    // -- Decoding
 
-    /// The result of a parse method
+    /// The result of a decode method
     template <std::input_iterator InputIt>
-    struct ParseResult {
+    struct DecodeResult {
 
-        constexpr ParseResult() = default;
+        constexpr DecodeResult() = default;
 
-        constexpr ParseResult(InputIt input_it, json_error code = json_error{})
+        constexpr DecodeResult(InputIt input_it, json_error code = json_error{})
             : it(input_it), err(code)
         {}
 
+        /// This object implicitly converts to bool: true means we're error free
         constexpr operator bool() const noexcept { return err == json_error{}; }
 
-        InputIt     it{};   ///< End of parsed data or error spot
+        InputIt     it{};   ///< End of decoded data or error location
         json_error  err{};  ///< Offending error code, or 0
     };
 
@@ -107,19 +109,19 @@ private:
 public:
 
     /**
-     * @brief Parse JSON data in the given range
+     * @brief Decode JSON data in the given range
      *
-     * @param first     The start of the range to parse
-     * @param last      The end of the range to parse
-     * @param greedy    If true, the method will attempt to parse the whole
-     *  input range. If false, parsing will stop after successfully parsing
-     *  the top level JSON value.
+     * @param first     The start of the range to decode
+     * @param last      The end of the range to decode
+     * @param greedy    If true, the method will attempt to decode the whole
+     *  input range. If false, decoding will stop after successfully
+     *  decoding the top level JSON value.
      *
-     * @return Returns a ParseResult containing parse results; @see ParseResult
+     * @return Returns a DecodeResult containing results; @see DecodeResult
      */
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr auto parse(InputIt first, Stop last, bool greedy = true)
-        -> ParseResult<InputIt>
+    constexpr auto decode(InputIt first, Stop last, bool greedy = true)
+        -> DecodeResult<InputIt>
     {
         ParseCtx p_ctx{first, last};
         _value = parse_value(p_ctx);
@@ -127,39 +129,33 @@ public:
         if (p_ctx && greedy && !eat_whitespace(p_ctx))
             p_ctx.err = json_error::trailing_garbage;
 
-        return ParseResult { p_ctx.it_at, p_ctx.err };
+        return DecodeResult { p_ctx.it_at, p_ctx.err };
     }
 
     /// Parse JSON data in the given range
     template <std::ranges::input_range R>
-    constexpr auto parse(R&& r, bool greedy = true)
+    constexpr auto decode(R&& r, bool greedy = true)
     {
-        return parse(std::ranges::begin(r), std::ranges::end(r), greedy);
+        return decode(begin(r), end(r), greedy);
     }
 
     /// Parse from a C string
-    constexpr auto parse(const char* src, bool greedy = true)
+    constexpr auto decode(const char* src, bool greedy = true)
     {
-        return parse(std::string_view(src), greedy);
+        return decode(std::string_view(src), greedy);
     }
 
-    auto parse(nullptr_t, bool) = delete;
+    auto decode(nullptr_t, bool) = delete;
 
-    /// Parse data from the given input stream
-    auto parse_stream(std::istream& ifs)
+    /// Decode data from the given input stream
+    auto decode_stream(std::istream& ifs)
     {
         auto if_begin = std::istreambuf_iterator<char>{ifs};
         auto if_end   = std::istreambuf_iterator<char>{std::default_sentinel};
-        return parse(if_begin, if_end, true);
+        return decode(if_begin, if_end, true);
     }
 
     // -- Attributes
-
-    /// Returns true if this object contains valid JSON data
-    constexpr bool is_valid() const noexcept
-    {
-        return _value.is_valid();
-    }
 
     class value;
 
@@ -167,6 +163,30 @@ public:
     constexpr       value&  get_value()       &  noexcept { return _value; }
     constexpr const value&  get_value() const &  noexcept { return _value; }
     constexpr       value&& get_value()       && noexcept { return std::move(_value); }
+
+    /// Encoding policy: defines what to do for encoding errors
+    struct EncodingPolicy {
+
+        enum class Disposition : unsigned char {
+            Fail,           ///< Fail encoding operation
+            Null,           ///< Replace offending item with a JSON null
+            Throw           ///< Throw system_error (json_error)
+        };
+
+        constexpr EncodingPolicy() = default;
+
+        // Construct using a common disposition
+        constexpr explicit EncodingPolicy(Disposition d)
+            : value_invalid(d), number_nan(d), number_inf(d)
+        {}
+
+        /// What to do when value is invalid (default constructed)
+        Disposition value_invalid{Disposition::Fail};
+        /// What to do when a number is NaN
+        Disposition number_nan{Disposition::Fail};
+        /// What to do when a number is +/- infinity
+        Disposition number_inf{Disposition::Fail};
+    };
 
     // -- JSON value types
 
@@ -179,21 +199,22 @@ public:
     using array_ptr  = std::unique_ptr<array>;
 
     using value_variant = std::variant <
-        std::monostate, // Invalid value; used for default construction
+        nullptr_t,      // null
         object_ptr,     // { ... }
         array_ptr,      // [ ... ]
         string,         //  "..."
         number,         // 123.456
-        bool,           // true/false
-        nullptr_t       // null
+        bool            // true/false
     >;
 
-    class value : private value_variant
+    /// A JSON value: one of: string, number, object, array, Boolean, or null
+    class value : public value_variant
     {
     public:
 
         // -- Construction
 
+        // Default construction is a JSON null
         constexpr value() noexcept = default;
 
         // Construct from a value (pass through)
@@ -204,8 +225,6 @@ public:
         {}
 
         // -- Observers
-
-        constexpr bool is_valid() const noexcept { return index() > 0; }
 
         constexpr bool is_object() const noexcept { return is<object_ptr>(); }
         constexpr       object_ptr&  get_object()       &           { return get<object_ptr>(); }
@@ -255,42 +274,89 @@ public:
 
         // -- Encoding
 
+        /// The result of an encode method
+        template <std::output_iterator<char> OutputIt>
+        struct EncodeResult {
+
+            constexpr EncodeResult() = default;
+
+            constexpr EncodeResult(OutputIt output_it, json_error code = json_error{})
+                : it(output_it), err(code)
+            {}
+
+            /// This object implicitly converts to bool: true means we're error free
+            constexpr operator bool() const noexcept { return err == json_error{}; }
+
+            OutputIt    it{};   ///< End of encoded data
+            json_error  err{};  ///< Offending error code, or 0
+        };
+
+        /** @brief Returns the default encoding policy.
+
+            We use this method rather than a simple 'EncodingPolicy{}' to
+            work around a clang/gcc bug: "default member initializer for
+            '...' required before the end of its enclosing class"
+        */
+        static constexpr inline EncodingPolicy DefEncPolicy() noexcept
+        { return {}; }
+
         /// JSON encode value to an output iterator
         template <std::output_iterator<char> OutputIt>
-        constexpr inline auto encode(OutputIt it) const -> OutputIt
+        constexpr inline auto encode(OutputIt it, EncodingPolicy policy = EncodingPolicy{}) const
+            -> EncodeResult<OutputIt>
         {
-            return encode_value(*this, it);
+            return encode_value(*this, it, policy);
         }
 
         /// JSON encode value to a string
-        std::string inline encode() const
+        std::string inline encode(EncodingPolicy policy = DefEncPolicy()) const
         {
             std::string s;
-            encode(std::back_inserter(s));
+            const auto res = encode(std::back_inserter(s), policy);
+            if (!res)
+                return std::string{};
+
             return s;
         }
 
         // -- Encoding implementation --------------------------------------
 
+        /// Handle an encoding error based on specified policy
+        template <std::output_iterator<char> OutputIt>
+        static constexpr auto encode_error (json_error ec, OutputIt it, EncodingPolicy::Disposition d)
+            -> EncodeResult<OutputIt>
+        {
+            using Disposition = EncodingPolicy::Disposition;
+
+            switch (d) {
+            case Disposition::Null: return encode_literal("null", it);
+            case Disposition::Fail: return EncodeResult{it, ec};
+            case Disposition::Throw: throw std::system_error(make_error_code(ec));
+            }
+
+            return EncodeResult{it, json_error::unknown_encoding_disposition};
+        }
+
         /// JSON-encode the given value to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr inline auto encode_value (const value& val, OutputIt it) -> OutputIt
+        static constexpr inline auto encode_value (const value& val, OutputIt it,
+            EncodingPolicy policy = EncodingPolicy{}) -> EncodeResult<OutputIt>
         {
-            const auto visitor = [it](const auto& v) -> OutputIt {
+            const auto visitor = [it, policy](const auto& v) -> EncodeResult<OutputIt> {
                 if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object_ptr>)
-                    return encode_object(*v.get(), it);
+                    return encode_object(*v.get(), it, policy);
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array_ptr>)
-                    return encode_array(*v.get(), it);
+                    return encode_array(*v.get(), it, policy);
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, string>)
-                    return encode_string(v, it);
+                    return encode_string(v, it, policy);
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, number>)
-                    return encode_number(v, it);
+                    return encode_number(v, it, policy);
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, bool>)
                     return encode_literal(v ? "true" : "false", it);
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, nullptr_t>)
                     return encode_literal("null", it);
                 else
-                    return it;
+                    return encode_error(json_error::invalid_json_value, it, policy.value_invalid);
             };
 
             return std::visit(visitor, static_cast<const value_variant&>(val));
@@ -298,7 +364,8 @@ public:
 
         /// JSON-encode the given object to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_object(const object& val, OutputIt it) -> OutputIt
+        static constexpr auto encode_object(const object& val, OutputIt it,
+            EncodingPolicy policy = EncodingPolicy{}) -> EncodeResult<OutputIt>
         {
             *it++ = '{';
 
@@ -308,9 +375,16 @@ public:
                 else
                     *it++ = ',';
 
-                it = encode_string(mem_key, it);
+                auto encode_result = encode_string(mem_key, it, policy);
+                if (!encode_result)
+                    return encode_result;
+                it = encode_result.it;
+
                 *it++ = ':';
-                it = encode_value(mem_val, it);
+                encode_result = encode_value(mem_val, it, policy);
+                if (!encode_result)
+                    return encode_result;
+                it = encode_result.it;
             }
 
             *it++ = '}';
@@ -320,7 +394,8 @@ public:
 
         /// JSON-encode the given array to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_array(const array& val, OutputIt it) -> OutputIt
+        static constexpr auto encode_array(const array& val, OutputIt it,
+            EncodingPolicy policy = EncodingPolicy{}) -> EncodeResult<OutputIt>
         {
             *it++ = '[';
 
@@ -330,7 +405,10 @@ public:
                 else
                     *it++ = ',';
 
-                it = encode_value(e, it);
+                auto encode_result = encode_value(e, it, policy);
+                if (!encode_result)
+                    return encode_result;
+                it = encode_result.it;
             }
 
             *it++ = ']';
@@ -340,7 +418,8 @@ public:
 
         /// JSON-encode the given string to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_string(const string& val, OutputIt it) -> OutputIt
+        static constexpr auto encode_string(const string& val, OutputIt it,
+            [[maybe_unused]] EncodingPolicy policy = EncodingPolicy{}) -> EncodeResult<OutputIt>
         {
             *it++ = '\"';
 
@@ -380,12 +459,15 @@ public:
 
         /// JSON-encode the given number to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_number(const number& val, OutputIt it) -> OutputIt
+        static constexpr auto encode_number(const number& val, OutputIt it,
+            EncodingPolicy policy = EncodingPolicy{}) -> EncodeResult<OutputIt>
         {
             constexpr auto buf_len = std::numeric_limits<double>::max_digits10 + 8;
 
-            // MDTODO : What about NAN and INF? Not valid JSON. return null?
-            //          Extension to allow "NaN" etc?
+            if (std::isnan(val))
+                return encode_error(json_error::number_nan, it, policy.number_nan);
+            if (std::isinf(val))
+                return encode_error(json_error::number_nan, it, policy.number_inf);
 
             char buf[buf_len]{};
             const auto [ptr, ec] = std::to_chars(buf, buf + buf_len, val);
@@ -394,10 +476,13 @@ public:
             return it;
         }
 
-        /// JSON-encode the given literal string to the given output iterator
+        /// Output the given literal string to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr inline auto encode_literal(std::string_view literal, OutputIt it) -> OutputIt
+        static constexpr inline auto encode_literal(std::string_view literal, OutputIt it)
+            -> EncodeResult<OutputIt>
         {
+            // This guy is used to "encode" true, false, and null
+
             for (auto c : literal)
                 *it++ = c;
 
@@ -548,14 +633,13 @@ protected:
         case '}': ++p_ctx.it_at; return TokenType::ObjectEnd;
         case '[': ++p_ctx.it_at; return TokenType::ArrayStart;
         case ']': ++p_ctx.it_at; return TokenType::ArrayEnd;
+        default : return TokenType::NotAToken;
         }
-
-        return TokenType::NotAToken;
     }
 
     constexpr static inline bool is_whitespace(int ch) noexcept
     {
-        return (ch == ' ') || (ch == '\n') || (ch == '\r') || (ch == '\t') || (ch == 0);
+        return (ch == ' ') || (ch == '\n') || (ch == '\r') || (ch == '\t');
     }
 
     // Consume whitespace; returns true if we have no more input
@@ -674,7 +758,7 @@ protected:
         // We may be dealing with a single pass iterator and there's no
         // reliable upper bound on the length of the input string so we'll
         // need to buffer the data. Grab everything up to the next delimiter
-        // and then parse the whole chunk.
+        // and then decode the whole chunk.
         std::string num_buf;
         for (; p_ctx.it_at != p_ctx.it_end; ++p_ctx.it_at) {
             if (is_whitespace(*p_ctx.it_at))

@@ -17,7 +17,7 @@
 namespace turner {
 
 enum class json_error {
-    // Parse errors: [100,200)
+    // Decode errors: [100,200)
     unexpected_token = 100,
     unterminated_array,
     unterminated_string,
@@ -29,7 +29,13 @@ enum class json_error {
     invalid_hex_char,
     number_out_of_range,
     not_a_token,
-    not_a_number
+    not_a_number,
+
+    // Encode errors: [200,300)
+    invalid_json_value = 200,
+    number_nan,
+    number_inf,
+    unknown_encoding_disposition
 };
 
 class json_category_impl : public std::error_category

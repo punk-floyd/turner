@@ -26,9 +26,8 @@ using namespace turner;
 
 TEST_CASE ("Default construction", "[construction]") {
 
-    json default_constructed{};
-
-    REQUIRE (default_constructed.is_valid() == false);
+    json uut{};
+    REQUIRE (uut.get_value().is_null());
 }
 
 TEST_CASE ("Simple runtime parsing check" "[parsing]") {
@@ -36,19 +35,19 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
     json uut;
 
     SECTION ("Parse true") {
-        REQUIRE (uut.parse("true"));
+        REQUIRE (uut.decode("true"));
         REQUIRE (uut.get_value().is_bool());
         REQUIRE (uut.get_value().get_bool() == true);
     }
 
     SECTION ("Parse false") {
-        REQUIRE (uut.parse("false"));
+        REQUIRE (uut.decode("false"));
         REQUIRE (uut.get_value().is_bool());
         REQUIRE (uut.get_value().get_bool() == false);
     }
 
     SECTION ("Parse null") {
-        REQUIRE (uut.parse("null"));
+        REQUIRE (uut.decode("null"));
         REQUIRE (uut.get_value().is_null());
         REQUIRE (uut.get_value().get_null() == nullptr);
     }
@@ -57,91 +56,91 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
 
     // -- Numbers
     SECTION ("Parse numbers: Zero") {
-        REQUIRE (uut.parse("0"));
+        REQUIRE (uut.decode("0"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, 0.001));
     }
     SECTION ("Parse numbers: Integer") {
-        REQUIRE (uut.parse("42"));
+        REQUIRE (uut.decode("42"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(42, 0.001));
     }
     SECTION ("Parse numbers: Negative number") {
-        REQUIRE (uut.parse("-10"));
+        REQUIRE (uut.decode("-10"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(-10, 0.001));
     }
     SECTION ("Parse numbers: Floating-point") {
-        REQUIRE (uut.parse("3.14159"));
+        REQUIRE (uut.decode("3.14159"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(3.14159, 0.001));
     }
     SECTION ("Parse numbers: Scientific notation with positive exponent") {
-        REQUIRE (uut.parse("2.5e3"));
+        REQUIRE (uut.decode("2.5e3"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(2.5e3, 0.001));
     }
     SECTION ("Parse numbers: Leading zero in a fraction") {
-        REQUIRE (uut.parse("0.25"));
+        REQUIRE (uut.decode("0.25"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0.25, 0.001));
     }
     SECTION ("Parse numbers: Negative zero") {
-        REQUIRE (uut.parse("-0"));
+        REQUIRE (uut.decode("-0"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, 0.001));
     }
     SECTION ("Parse numbers: Scientific notation with negative exponent") {
-        REQUIRE (uut.parse("6.022e-23"));
+        REQUIRE (uut.decode("6.022e-23"));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(6.022e-23, 0.001));
     }
 
     // -- Strings
     SECTION ("Parse strings: Basic string") {
-        REQUIRE (uut.parse(R"|("Hello, world!")|"));
+        REQUIRE (uut.decode(R"|("Hello, world!")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "Hello, world!");
     }
     SECTION ("Parse strings: String with Escape Characters") {
-        REQUIRE (uut.parse(R"|("This is a line break:\nSecond line.")|"));
+        REQUIRE (uut.decode(R"|("This is a line break:\nSecond line.")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "This is a line break:\nSecond line.");
     }
     SECTION ("Parse strings: String with Unicode Characters") {
-        REQUIRE (uut.parse(R"|("Unicode character: \u00E9")|"));
+        REQUIRE (uut.decode(R"|("Unicode character: \u00E9")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "Unicode character: \u00E9");
     }
     SECTION ("Parse strings: Empty String") {
-        REQUIRE (uut.parse(R"|("")|"));
+        REQUIRE (uut.decode(R"|("")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string().empty());
     }
     SECTION ("Parse strings: String with Double Quotes") {
-        REQUIRE (uut.parse(R"|("Quoted string: \"This is in quotes.\"")|"));
+        REQUIRE (uut.decode(R"|("Quoted string: \"This is in quotes.\"")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "Quoted string: \"This is in quotes.\"");
     }
     SECTION ("Parse strings: String with Backslashes") {
-        REQUIRE (uut.parse(R"|("C:\\Path\\To\\File")|"));
+        REQUIRE (uut.decode(R"|("C:\\Path\\To\\File")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "C:\\Path\\To\\File");
     }
     SECTION ("Parse strings: String with Leading and Trailing Whitespace") {
-        REQUIRE (uut.parse(R"|("   Trimmed string   ")|"));
+        REQUIRE (uut.decode(R"|("   Trimmed string   ")|"));
         REQUIRE (uut.get_value().is_string());
         REQUIRE (uut.get_value().get_string() == "   Trimmed string   ");
     }
 
     // -- Objects
     SECTION ("Parse objects: Empty object") {
-        REQUIRE (uut.parse(R"|({})|"));
+        REQUIRE (uut.decode(R"|({})|"));
         REQUIRE (uut.get_value().is_object());
         REQUIRE (uut.get_value().get_object()->empty());
     }
     SECTION ("Parse objects: Basic object") {
-        REQUIRE (uut.parse(R"|({"name":"John Doe","age":30,"city":"New York"})|"));
+        REQUIRE (uut.decode(R"|({"name":"John Doe","age":30,"city":"New York"})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
         REQUIRE (obj->size() == 3);
@@ -150,7 +149,7 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
         REQUIRE (obj->contains("city"));
     }
     SECTION ("Parse objects: Nested object") {
-        REQUIRE (uut.parse(R"|({"person":{"name":"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|"));
+        REQUIRE (uut.decode(R"|({"person":{"name":"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
         REQUIRE (obj->size() == 2);
@@ -158,17 +157,17 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
         REQUIRE (obj->contains("person"));
     }
     SECTION ("Parse objects: Array of objects") {
-        REQUIRE (uut.parse(R"|([{"id":1,"name":"Item 1"},{"id":2,"name":"Item 2"},{"id":3,"name":"Item 3"}])|"));
+        REQUIRE (uut.decode(R"|([{"id":1,"name":"Item 1"},{"id":2,"name":"Item 2"},{"id":3,"name":"Item 3"}])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 3);
     }
     SECTION ("Parse objects: Object with Array Property") {
-        REQUIRE (uut.parse(R"|({"colors":["red","green","blue"],"status":"active"})|"));
+        REQUIRE (uut.decode(R"|({"colors":["red","green","blue"],"status":"active"})|"));
         REQUIRE (uut.get_value().is_object());
         REQUIRE (uut.get_value().get_object()->size() == 2);
     }
     SECTION ("Parse objects: Boolean and null values") {
-        REQUIRE (uut.parse(R"|({"isStudent":true,"hasCar":false,"grades":null})|"));
+        REQUIRE (uut.decode(R"|({"isStudent":true,"hasCar":false,"grades":null})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
         REQUIRE (obj->size() == 3);
@@ -179,32 +178,32 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
 
     // -- Arrays
     SECTION ("Parse arrays: Empty array") {
-        REQUIRE (uut.parse(R"|([])|"));
+        REQUIRE (uut.decode(R"|([])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->empty());
     }
     SECTION ("Parse arrays: Basic array") {
-        REQUIRE (uut.parse(R"|(["apple", "banana", "orange"])|"));
+        REQUIRE (uut.decode(R"|(["apple", "banana", "orange"])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 3);
     }
     SECTION ("Parse arrays: Array of numbers") {
-        REQUIRE (uut.parse(R"|([42, 3.14, -7, 0])|"));
+        REQUIRE (uut.decode(R"|([42, 3.14, -7, 0])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 4);
     }
     SECTION ("Parse arrays: Array of objects") {
-        REQUIRE (uut.parse(R"|([{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}, {"id": 3, "name": "Item 3"}])|"));
+        REQUIRE (uut.decode(R"|([{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}, {"id": 3, "name": "Item 3"}])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 3);
     }
     SECTION ("Parse arrays: Nested arrays") {
-        REQUIRE (uut.parse(R"|([[1, 2, 3], ["a", "b", "c"], [true, false, null]])|"));
+        REQUIRE (uut.decode(R"|([[1, 2, 3], ["a", "b", "c"], [true, false, null]])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 3);
     }
     SECTION ("Parse arrays: Array with mixed types") {
-        REQUIRE (uut.parse(R"|(["John Doe", 30, true, null])|"));
+        REQUIRE (uut.decode(R"|(["John Doe", 30, true, null])|"));
         REQUIRE (uut.get_value().is_array());
         REQUIRE (uut.get_value().get_array()->size() == 4);
     }
@@ -215,38 +214,38 @@ TEST_CASE ("Simple runtime parsing check (Greediness)" "[parsing]") {
     json uut;
 
     SECTION ("Greedy: Trailing whitespace is okay") {
-        REQUIRE(uut.parse("{}    ", true));
+        REQUIRE(uut.decode("{}    ", true));
         REQUIRE(uut.get_value().is_object());
     }
 
     SECTION ("Non-greedy: Trailing whitespace is okay") {
-        REQUIRE(uut.parse("{}    ", false));
+        REQUIRE(uut.decode("{}    ", false));
         REQUIRE(uut.get_value().is_object());
     }
 
     SECTION ("Greedy: Trailing non-whitespace is not-okay") {
-        const auto parse_res = uut.parse("{}A");
+        const auto parse_res = uut.decode("{}A");
         REQUIRE(static_cast<bool>(parse_res) == false);
         REQUIRE(uut.get_value().is_object());   // Object is still parsed
         REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Non-greedy: Trailing non-whitespace is okay") {
-        const auto parse_res = uut.parse("{}A", false);
+        const auto parse_res = uut.decode("{}A", false);
         REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
         REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Greedy: Trailing non-whitespace is not-okay (with intermediate whitespace)") {
-        const auto parse_res = uut.parse("{}   A");
+        const auto parse_res = uut.decode("{}   A");
         REQUIRE(static_cast<bool>(parse_res) == false);
         REQUIRE(uut.get_value().is_object());   // Object is still parsed
         REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Non-greedy: Trailing non-whitespace is okay (with intermediate whitespace)") {
-        const auto parse_res = uut.parse("{}   A", false);
+        const auto parse_res = uut.decode("{}   A", false);
         REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
         REQUIRE(*parse_res.it == ' ');        // Non-greedy so we should be at first space
@@ -258,8 +257,8 @@ TEST_CASE ("Input stream parsing check" "[parsing]") {
     json uut;
 
     std::ifstream ifs("sample.json");
-    REQUIRE(ifs.is_open());
-    REQUIRE(uut.parse_stream(ifs));
+    REQUIRE(ifs.is_open());             // This would be a test setup error
+    REQUIRE(uut.decode_stream(ifs));
 }
 
 TEST_CASE ("Parsing from common string-like sources" "[parsing]") {
@@ -269,21 +268,21 @@ TEST_CASE ("Parsing from common string-like sources" "[parsing]") {
     json uut;
 
     SECTION("string literal") {
-        REQUIRE(uut.parse("{ \"Pink Fluid\" : \"Pigs (Three Different Ones)\" }"));
+        REQUIRE(uut.decode("{ \"Pink Fluid\" : \"Pigs (Three Different Ones)\" }"));
     }
 
     SECTION("const char* string") {
-        REQUIRE(uut.parse(raw_json_source));
+        REQUIRE(uut.decode(raw_json_source));
     }
 
     SECTION("Parse std::string") {
         std::string src(raw_json_source);
-        REQUIRE(uut.parse(src));
+        REQUIRE(uut.decode(src));
     }
 
     SECTION("Parse std::string_view") {
         std::string_view src(raw_json_source);
-        REQUIRE(uut.parse(src));
+        REQUIRE(uut.decode(src));
     }
 }
 
@@ -305,7 +304,9 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         // Small positive number
         REQUIRE(json::value{1.23456789e-20}.encode() == "1.23456789e-20");
 
-        // TODO : NaN and INF once we have a policy and a way of specifying it
+        const auto Null = json::EncodingPolicy::Disposition::Null;
+        const json::EncodingPolicy p{Null};
+        REQUIRE(json::value{std::nan("")}.encode(p) == "null");
     }
 
     SECTION("Encode string") {
@@ -355,5 +356,25 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         constexpr std::string_view encode_expect =
             R"|({"a":"dog","b":0,"c":null,"d":true,"e":false,"f":[],"g":{}})|";
         REQUIRE(v.encode() == encode_expect);
+    }
+
+    SECTION("EncodingPolicy dispositions"){
+        using EncodingPolicy = json::EncodingPolicy;
+
+        const json::value bad_value{std::nan("")};
+
+        // Disposition::Fail - Fail the operation
+        const EncodingPolicy policy_fail{EncodingPolicy::Disposition::Fail};
+        std::string s;
+        auto res = bad_value.encode(std::back_inserter(s), policy_fail);
+        REQUIRE(res.err == json_error::number_nan);
+
+        // Disposition::Null - Encode the item as a JSON null
+        const EncodingPolicy policy_null{EncodingPolicy::Disposition::Null};
+        REQUIRE(bad_value.encode(policy_null) == "null");
+
+        // Disposition::Throw - Throw system error (containing json_error)
+        const EncodingPolicy policy_throw{EncodingPolicy::Disposition::Throw};
+        REQUIRE_THROWS_AS(bad_value.encode(policy_throw), std::system_error);
     }
 }
