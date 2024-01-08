@@ -1,0 +1,20 @@
+
+---
+
+Checks: >
+  -*,
+  bugprone-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -misc-non-private-member-variables-in-classes,
+  -readability-convert-member-functions-to-static,
+  -readability-identifier-length,
+  -misc-no-recursion,
+  -bugprone-easily-swappable-parameters
+#  Only because test code has lots of magic numbers
+  -readability-magic-numbers
+
+HeaderFilterRegex: inc/turner/.*\.h

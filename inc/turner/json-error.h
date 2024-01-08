@@ -42,11 +42,11 @@ class json_category_impl : public std::error_category
 {
 public:
 
-    const char* name() const noexcept override
+    [[nodiscard]] const char* name() const noexcept override
     {
         return "turner::json";
     }
-    std::string message(int ev) const override
+    [[nodiscard]] std::string message(int ev) const override
     {
         switch (static_cast<json_error>(ev)) {
             case json_error::unexpected_token:
@@ -81,7 +81,7 @@ public:
 
 inline const std::error_category& json_category() noexcept
 {
-    static json_category_impl instance{};
+    const static json_category_impl instance{};
     return instance;
 }
 

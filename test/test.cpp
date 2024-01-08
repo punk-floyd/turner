@@ -8,11 +8,19 @@
  *
  */
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
-#include <catch2/catch_template_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <turner/json.h>
 
+#include <system_error>
+#include <string_view>
+#include <iterator>
 #include <fstream>
+#include <utility>
+#include <string>
+#include <cmath>
+
+#include <turner/json-error.h>
+#include <turner/json.h>
 
 /*
     A lot of this test code uses raw string literals to specify JSON
@@ -54,46 +62,48 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
 
     using namespace Catch::Matchers;
 
+    constexpr double eps = 0.001;
+
     // -- Numbers
     SECTION ("Parse numbers: Zero") {
         REQUIRE (uut.decode("0"));
         REQUIRE (uut.get_value().is_number());
-        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, 0.001));
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, eps));
     }
     SECTION ("Parse numbers: Integer") {
         REQUIRE (uut.decode("42"));
         REQUIRE (uut.get_value().is_number());
-        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(42, 0.001));
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(42, eps));
     }
     SECTION ("Parse numbers: Negative number") {
         REQUIRE (uut.decode("-10"));
         REQUIRE (uut.get_value().is_number());
-        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(-10, 0.001));
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(-10, eps));
     }
     SECTION ("Parse numbers: Floating-point") {
         REQUIRE (uut.decode("3.14159"));
         REQUIRE (uut.get_value().is_number());
-        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(3.14159, 0.001));
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(3.14159, eps));
     }
     SECTION ("Parse numbers: Scientific notation with positive exponent") {
         REQUIRE (uut.decode("2.5e3"));
         REQUIRE (uut.get_value().is_number());
-        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(2.5e3, 0.001));
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(2.5e3, eps));
     }
     SECTION ("Parse numbers: Leading zero in a fraction") {
         REQUIRE (uut.decode("0.25"));
         REQUIRE (uut.get_value().is_number());
-        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0.25, 0.001));
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0.25, eps));
     }
     SECTION ("Parse numbers: Negative zero") {
         REQUIRE (uut.decode("-0"));
         REQUIRE (uut.get_value().is_number());
-        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, 0.001));
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, eps));
     }
     SECTION ("Parse numbers: Scientific notation with negative exponent") {
         REQUIRE (uut.decode("6.022e-23"));
         REQUIRE (uut.get_value().is_number());
-        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(6.022e-23, 0.001));
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(6.022e-23, eps));
     }
 
     // -- Strings
@@ -304,8 +314,7 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         // Small positive number
         REQUIRE(json::value{1.23456789e-20}.encode() == "1.23456789e-20");
 
-        const auto Null = json::EncodingPolicy::Disposition::Null;
-        const json::EncodingPolicy p{Null};
+        const json_encoding_policy p{json_encoding_policy::Disposition::Null};
         REQUIRE(json::value{std::nan("")}.encode(p) == "null");
     }
 
@@ -331,12 +340,12 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         a_ray->emplace_back(0.0);
         a_ray->emplace_back("snake");
         a_ray->emplace_back(json::make_object());
-        json::value v1{std::move(a_ray)};
+        const json::value v1{std::move(a_ray)};
         REQUIRE(v1.encode() == encode_expect);
 
         // Use the make_array helper
         auto also_a_ray = json::make_array(true, false, nullptr, 0.0, "snake", json::make_object());
-        json::value v2{std::move(also_a_ray)};
+        const json::value v2{std::move(also_a_ray)};
         REQUIRE(v2.encode() == encode_expect);
     }
 
@@ -351,30 +360,29 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         obj->emplace(std::make_pair("e",  false));
         obj->emplace(std::make_pair("f",  json::make_array()));
         obj->emplace(std::make_pair("g",  json::make_object()));
-        json::value v{std::move(obj)};
+        const json::value v{std::move(obj)};
 
         constexpr std::string_view encode_expect =
             R"|({"a":"dog","b":0,"c":null,"d":true,"e":false,"f":[],"g":{}})|";
         REQUIRE(v.encode() == encode_expect);
     }
 
-    SECTION("EncodingPolicy dispositions"){
-        using EncodingPolicy = json::EncodingPolicy;
+    SECTION("json_encoding_policy dispositions"){
 
         const json::value bad_value{std::nan("")};
 
         // Disposition::Fail - Fail the operation
-        const EncodingPolicy policy_fail{EncodingPolicy::Disposition::Fail};
+        const json_encoding_policy policy_fail{json_encoding_policy::Disposition::Fail};
         std::string s;
         auto res = bad_value.encode(std::back_inserter(s), policy_fail);
         REQUIRE(res.err == json_error::number_nan);
 
         // Disposition::Null - Encode the item as a JSON null
-        const EncodingPolicy policy_null{EncodingPolicy::Disposition::Null};
+        const json_encoding_policy policy_null{json_encoding_policy::Disposition::Null};
         REQUIRE(bad_value.encode(policy_null) == "null");
 
         // Disposition::Throw - Throw system error (containing json_error)
-        const EncodingPolicy policy_throw{EncodingPolicy::Disposition::Throw};
+        const json_encoding_policy policy_throw{json_encoding_policy::Disposition::Throw};
         REQUIRE_THROWS_AS(bad_value.encode(policy_throw), std::system_error);
     }
 }

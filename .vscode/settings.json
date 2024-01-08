@@ -69,6 +69,8 @@
         "variant": "cpp"
     },
     "cSpell.words": [
-        "Koker"
+        "bugprone",
+        "Koker",
+        "swappable"
     ]
 }
