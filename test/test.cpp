@@ -60,50 +60,82 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
         REQUIRE (uut.get_value().get_null() == nullptr);
     }
 
+    // -- Numbers
+
     using namespace Catch::Matchers;
 
-    constexpr double eps = 0.001;
+    constexpr double eps = 0.001;   // epsilon for comparison
 
-    // -- Numbers
+    // Use explicit decode policy to forbid parsing integers as integers
+    decode_policy no_int_decode{};
+    no_int_decode.allow_integer_decode = false;
+
     SECTION ("Parse numbers: Zero") {
-        REQUIRE (uut.decode("0"));
+        REQUIRE (uut.decode("0", no_int_decode));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, eps));
     }
     SECTION ("Parse numbers: Integer") {
-        REQUIRE (uut.decode("42"));
+        REQUIRE (uut.decode("42", no_int_decode));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(42, eps));
     }
     SECTION ("Parse numbers: Negative number") {
-        REQUIRE (uut.decode("-10"));
+        REQUIRE (uut.decode("-10", no_int_decode));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(-10, eps));
     }
     SECTION ("Parse numbers: Floating-point") {
-        REQUIRE (uut.decode("3.14159"));
+        REQUIRE (uut.decode("3.14159", no_int_decode));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(3.14159, eps));
     }
     SECTION ("Parse numbers: Scientific notation with positive exponent") {
-        REQUIRE (uut.decode("2.5e3"));
+        REQUIRE (uut.decode("2.5e3", no_int_decode));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(2.5e3, eps));
     }
     SECTION ("Parse numbers: Leading zero in a fraction") {
-        REQUIRE (uut.decode("0.25"));
+        REQUIRE (uut.decode("0.25", no_int_decode));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0.25, eps));
     }
     SECTION ("Parse numbers: Negative zero") {
-        REQUIRE (uut.decode("-0"));
+        REQUIRE (uut.decode("-0", no_int_decode));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(0, eps));
     }
     SECTION ("Parse numbers: Scientific notation with negative exponent") {
-        REQUIRE (uut.decode("6.022e-23"));
+        REQUIRE (uut.decode("6.022e-23", no_int_decode));
         REQUIRE (uut.get_value().is_number());
         REQUIRE_THAT(uut.get_value().get_number(), WithinRel(6.022e-23, eps));
+    }
+
+    // -- Integers
+
+    // Use explicit decode policy to allow parsing integers as integers
+    decode_policy allow_int_decode{};
+    allow_int_decode.allow_integer_decode = true;
+
+    SECTION ("Parse integers: Zero") {
+        REQUIRE (uut.decode("0", allow_int_decode));
+        REQUIRE (uut.get_value().is_integer());
+        REQUIRE (uut.get_value().get_integer() == 0);
+    }
+    SECTION ("Parse integers: Integer") {
+        REQUIRE (uut.decode("42", allow_int_decode));
+        REQUIRE (uut.get_value().is_integer());
+        REQUIRE (uut.get_value().get_integer() == 42);
+    }
+    SECTION ("Parse integers: Negative integer") {
+        REQUIRE (uut.decode("-42", allow_int_decode));
+        REQUIRE (uut.get_value().is_integer());
+        REQUIRE (uut.get_value().get_integer() == -42);
+    }
+    SECTION ("Parse integers: Floating-point is still a number") {
+        REQUIRE (uut.decode("3.14159", allow_int_decode));
+        REQUIRE (uut.get_value().is_number());
+        REQUIRE_THAT(uut.get_value().get_number(), WithinRel(3.14159, eps));
     }
 
     // -- Strings
@@ -223,42 +255,92 @@ TEST_CASE ("Simple runtime parsing check (Greediness)" "[parsing]") {
 
     json uut;
 
+    decode_policy policy_greedy{};
+    policy_greedy.greedy = true;
+
+    decode_policy policy_not_greedy{};
+    policy_not_greedy.greedy = false;
+
     SECTION ("Greedy: Trailing whitespace is okay") {
-        REQUIRE(uut.decode("{}    ", true));
+        REQUIRE(uut.decode("{}    ", policy_greedy));
         REQUIRE(uut.get_value().is_object());
     }
 
     SECTION ("Non-greedy: Trailing whitespace is okay") {
-        REQUIRE(uut.decode("{}    ", false));
+        REQUIRE(uut.decode("{}    ", policy_not_greedy));
         REQUIRE(uut.get_value().is_object());
     }
 
     SECTION ("Greedy: Trailing non-whitespace is not-okay") {
-        const auto parse_res = uut.decode("{}A");
+        const auto parse_res = uut.decode("{}A", policy_greedy);
         REQUIRE(static_cast<bool>(parse_res) == false);
         REQUIRE(uut.get_value().is_object());   // Object is still parsed
         REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Non-greedy: Trailing non-whitespace is okay") {
-        const auto parse_res = uut.decode("{}A", false);
+        const auto parse_res = uut.decode("{}A", policy_not_greedy);
         REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
         REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Greedy: Trailing non-whitespace is not-okay (with intermediate whitespace)") {
-        const auto parse_res = uut.decode("{}   A");
+        const auto parse_res = uut.decode("{}   A", policy_greedy);
         REQUIRE(static_cast<bool>(parse_res) == false);
         REQUIRE(uut.get_value().is_object());   // Object is still parsed
         REQUIRE(*parse_res.it == 'A');
     }
 
     SECTION ("Non-greedy: Trailing non-whitespace is okay (with intermediate whitespace)") {
-        const auto parse_res = uut.decode("{}   A", false);
+        const auto parse_res = uut.decode("{}   A", policy_not_greedy);
         REQUIRE(static_cast<bool>(parse_res) == true);
         REQUIRE(uut.get_value().is_object());
         REQUIRE(*parse_res.it == ' ');        // Non-greedy so we should be at first space
+    }
+}
+
+TEST_CASE ("Object member name uniqueness" "[parsing]") {
+
+    // A JSON object with two members that have the same name
+    const auto source = R"|({"foo" : false, "foo" : true})|";
+
+    json uut;
+
+    SECTION ("NonUniqueDisposition::Overwrite") {
+
+        decode_policy policy{};
+        policy.non_unique_member_name_disposition =
+            decode_policy::NonUniqueDisposition::Overwrite;
+
+        REQUIRE(uut.decode(source, policy));
+        REQUIRE(uut.get_value().is_object());
+
+        const auto& obj = uut.get_value().get_object();
+        const auto it  = obj->find("foo");
+        REQUIRE(it != obj->cend());
+        REQUIRE(it->second.is_bool());
+        REQUIRE(it->second.get_bool());
+    }
+
+    SECTION ("NonUniqueDisposition::Fail") {
+
+        decode_policy policy{};
+        policy.non_unique_member_name_disposition =
+            decode_policy::NonUniqueDisposition::Fail;
+
+        const auto res = uut.decode(source, policy);
+        REQUIRE(!res);
+        REQUIRE(res.err == json_error::nonunique_member_name);
+    }
+
+    SECTION ("NonUniqueDisposition::Throw") {
+
+        decode_policy policy{};
+        policy.non_unique_member_name_disposition =
+            decode_policy::NonUniqueDisposition::Throw;
+
+        REQUIRE_THROWS_AS(uut.decode(source, policy), std::system_error);
     }
 }
 
@@ -314,8 +396,19 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         // Small positive number
         REQUIRE(json::value{1.23456789e-20}.encode() == "1.23456789e-20");
 
-        const json_encoding_policy p{json_encoding_policy::Disposition::Null};
+        const encode_policy p{encode_policy::Disposition::Null};
         REQUIRE(json::value{std::nan("")}.encode(p) == "null");
+    }
+
+    SECTION("Encode integers") {
+        // Note: JSON does not technically support integers, per-se.
+
+        REQUIRE(json::value{0}.encode() == "0");
+
+        // Any integer value in the range +/- 2^53 can be represented in a
+        // IEEE 754 double precision floaing point value.
+        REQUIRE(json::value{ 9007199254740992ll}.encode() ==  "9007199254740992");
+        REQUIRE(json::value{-9007199254740992ll}.encode() == "-9007199254740992");
     }
 
     SECTION("Encode string") {
@@ -367,22 +460,22 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         REQUIRE(v.encode() == encode_expect);
     }
 
-    SECTION("json_encoding_policy dispositions"){
+    SECTION("encode_policy dispositions") {
 
         const json::value bad_value{std::nan("")};
 
         // Disposition::Fail - Fail the operation
-        const json_encoding_policy policy_fail{json_encoding_policy::Disposition::Fail};
+        const encode_policy policy_fail{encode_policy::Disposition::Fail};
         std::string s;
         auto res = bad_value.encode(std::back_inserter(s), policy_fail);
         REQUIRE(res.err == json_error::number_nan);
 
         // Disposition::Null - Encode the item as a JSON null
-        const json_encoding_policy policy_null{json_encoding_policy::Disposition::Null};
+        const encode_policy policy_null{encode_policy::Disposition::Null};
         REQUIRE(bad_value.encode(policy_null) == "null");
 
         // Disposition::Throw - Throw system error (containing json_error)
-        const json_encoding_policy policy_throw{json_encoding_policy::Disposition::Throw};
+        const encode_policy policy_throw{encode_policy::Disposition::Throw};
         REQUIRE_THROWS_AS(bad_value.encode(policy_throw), std::system_error);
     }
 }

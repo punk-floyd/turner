@@ -30,6 +30,7 @@ enum class json_error {
     number_out_of_range,
     not_a_token,
     not_a_number,
+    nonunique_member_name,
 
     // Encode errors: [200,300)
     invalid_json_value = 200,
