@@ -19,7 +19,6 @@
 #include <string>
 #include <cmath>
 
-#include <turner/json-error.h>
 #include <turner/json.h>
 
 /*
