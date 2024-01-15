@@ -1,11 +1,33 @@
 {
     "array": [
-        1,
-        2,
-        3,
-        "four",
-        5.5,
+        "string in array",
+        123,
+        45.67,
+        true,
         false,
-        null
-    ]
+        null,
+        {
+            "object_in_array": "value"
+        },
+        [
+            10,
+            20,
+            30
+        ]
+    ],
+    "boolean_false": false,
+    "boolean_true": true,
+    "float": 3.14,
+    "integer": 42,
+    "null": null,
+    "object": {
+        "nested_array": [
+            1,
+            2,
+            3
+        ],
+        "nested_integer": 100,
+        "nested_string": "Nested text"
+    },
+    "string": "Hello, World!"
 }

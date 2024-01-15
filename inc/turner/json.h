@@ -1,8 +1,10 @@
 /**
  * @file    json.h
  * @author  Mike DeKoker (dekoker.mike@gmail.com)
- * @brief   C++20 UTF-8 JSON parsing library
+ * @brief   C++20 UTF-8 JSON encoding/decoding library
  * @date    2023-11-30
+ *
+ * https://github.com/punk-floyd/turner
  *
  * @copyright Copyright (c) 2023 Mike DeKoker
  *
@@ -61,14 +63,16 @@ enum class json_error {
     unknown_encoding_disposition
 };
 
-//class json_category_impl;
+// Defined way down below
 inline const std::error_category& json_category() noexcept;
 
+/// Make a std:error_code from a json_error
 inline std::error_code make_error_code(json_error e) noexcept
 {
     return std::error_code{static_cast<int>(e), json_category()};
 }
 
+/// Make a std:error_condition from a json_error
 inline std::error_condition make_error_condition(json_error e) noexcept
 {
     return std::error_condition{static_cast<int>(e), json_category()};
@@ -193,9 +197,9 @@ private:
             { return err == json_error{}; }
 
         decode_policy    policy;
-        InputIt                 it_at;      ///< Current location in input
-        Stop                    it_end;     ///< End if input
-        json_error              err{};      ///< Parse error, or {}
+        InputIt          it_at;      ///< Current location in input
+        Stop             it_end;     ///< End if input
+        json_error       err{};      ///< Parse error, or {}
     };
 
 public:
@@ -390,13 +394,13 @@ public:
 
         /// Handle an encoding error based on specified policy
         template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_error (json_error ec, OutputIt it, encode_policy::Disposition d)
-            -> encode_result<OutputIt>
+        static constexpr auto encode_error (json_error ec, OutputIt it,
+            encode_policy policy, encode_policy::Disposition d) -> encode_result<OutputIt>
         {
             using Disposition = encode_policy::Disposition;
 
             switch (d) {
-            case Disposition::Null: return encode_literal("null", it);
+            case Disposition::Null: return encode_literal("null", it, policy);
             case Disposition::Fail: return encode_result{it, ec};
             case Disposition::Throw: throw std::system_error(make_error_code(ec));
             }
@@ -426,13 +430,13 @@ public:
                     return encode_integer(v, it, policy);
                 }
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, bool>) {
-                    return encode_literal(v ? "true" : "false", it);
+                    return encode_literal(v ? "true" : "false", it, policy);
                 }
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, nullptr_t>) {
-                    return encode_literal("null", it);
+                    return encode_literal("null", it, policy);
                 }
                 else {
-                    return encode_error(json_error::invalid_json_value, it, policy.value_invalid);
+                    return encode_error(json_error::invalid_json_value, it, policy, policy.value_invalid);
                 }
             };
 
@@ -505,7 +509,7 @@ public:
         static constexpr auto encode_string(const string& val, OutputIt it,
             [[maybe_unused]] encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
         {
-            *it++ = '\"';
+            *it++ = '"';
 
             for (const auto& c : val) {
 
@@ -537,7 +541,7 @@ public:
                 }
             }
 
-            *it++ = '\"';
+            *it++ = '"';
 
             return it;
         }
@@ -550,10 +554,12 @@ public:
             constexpr auto buf_len = std::numeric_limits<double>::max_digits10 + 8;
 
             if (std::isnan(val)) {
-                return encode_error(json_error::number_nan, it, policy.number_nan);
+                return encode_error(json_error::number_nan, it,
+                    policy, policy.number_nan);
             }
             if (std::isinf(val)) {
-                return encode_error(json_error::number_nan, it, policy.number_inf);
+                return encode_error(json_error::number_nan, it,
+                    policy, policy.number_inf);
             }
 
             std::array<char, buf_len> buf;
@@ -583,8 +589,8 @@ public:
 
         /// Output the given literal string to the given output iterator
         template <std::output_iterator<char> OutputIt>
-        static constexpr inline auto encode_literal(std::string_view literal, OutputIt it)
-            -> encode_result<OutputIt>
+        static constexpr inline auto encode_literal(std::string_view literal, OutputIt it,
+        encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
         {
             // This guy is used to "encode" true, false, and null
 
