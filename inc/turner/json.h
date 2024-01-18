@@ -9,8 +9,8 @@
  * @copyright Copyright (c) 2023 Mike DeKoker
  *
  */
-#ifndef zzz_I_assure_you_that_json_turner_dot_h_has_been_included
-#define zzz_I_assure_you_that_json_turner_dot_h_has_been_included
+#ifndef zzz_I_assure_you_that_json_dot_h_has_been_included
+#define zzz_I_assure_you_that_json_dot_h_has_been_included
 
 #include <initializer_list>
 #include <system_error>
@@ -33,6 +33,7 @@
 
 namespace turner {
 
+// This defines the behavior for the default JSON decoding policy
 #ifdef TURNER_DEFAULT_ALLOW_INTEGER_DECODE
 constexpr inline bool default_allow_integer_decode = true;
 #else
@@ -121,6 +122,7 @@ struct decode_policy {
     NonUniqueDisposition non_unique_member_name_disposition{NonUniqueDisposition::Overwrite};
 };
 
+/// JSON encoder/decoder
 class json
 {
 public:
@@ -155,8 +157,6 @@ public:
     explicit json (const char* src, decode_policy policy = decode_policy{})
         : json(std::string_view(src), policy)
     { }
-
-    json (nullptr_t, bool) = delete;
 
     // -- Decoding
 
@@ -242,8 +242,6 @@ public:
     {
         return decode(std::string_view(src), policy);
     }
-
-    auto decode(nullptr_t, bool) = delete;
 
     /// Decode data from the given input stream
     auto decode_stream(std::istream& ifs, decode_policy policy = decode_policy{})
@@ -370,19 +368,40 @@ public:
             json_error  err{};  ///< Offending error code, or 0
         };
 
+        // A default PrintPolicy that does nothing (no pretty printing)
+        template <class CharT>
+        struct NoPrettyPrint {};
+
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        struct encode_context {
+            OutputIt            it;
+            encode_policy       policy;
+            PrintPolicy<char>   print;
+        };
+
         /// JSON encode value to an output iterator
-        template <std::output_iterator<char> OutputIt>
-        [[nodiscard]] constexpr inline auto encode(OutputIt it, encode_policy policy = encode_policy{}) const
+        template <std::output_iterator<char> OutputIt,
+            template <typename> class PrintPolicy = NoPrettyPrint>
+        [[nodiscard]] constexpr inline auto encode(OutputIt it,
+            encode_policy policy = encode_policy{}, PrintPolicy<char> print = {}) const
             -> encode_result<OutputIt>
         {
-            return encode_value(*this, it, policy);
+            encode_context ctx = {
+                .it = it,
+                .policy = policy,
+                .print  = print
+            };
+
+            return encode_value(*this, ctx);
         }
 
         /// JSON encode value to a string
-        [[nodiscard]] std::string inline encode(encode_policy policy = encode_policy{}) const
+        template <template <typename> class PrintPolicy = NoPrettyPrint>
+        [[nodiscard]] std::string inline encode(encode_policy policy = encode_policy{},
+            PrintPolicy<char> print = {}) const
         {
             std::string s;
-            const auto res = encode(std::back_inserter(s), policy);
+            const auto res = encode(std::back_inserter(s), policy, print);
             if (!res) {
                 return std::string{};
             }
@@ -393,50 +412,50 @@ public:
         // -- Encoding implementation --------------------------------------
 
         /// Handle an encoding error based on specified policy
-        template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_error (json_error ec, OutputIt it,
-            encode_policy policy, encode_policy::Disposition d) -> encode_result<OutputIt>
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        static constexpr auto encode_error (json_error ec,
+            encode_context<OutputIt, PrintPolicy>& ctx, encode_policy::Disposition d) -> encode_result<OutputIt>
         {
             using Disposition = encode_policy::Disposition;
 
             switch (d) {
-            case Disposition::Null: return encode_literal("null", it, policy);
-            case Disposition::Fail: return encode_result{it, ec};
+            case Disposition::Null: return encode_literal("null", ctx);
+            case Disposition::Fail: return encode_result{ctx.it, ec};
             case Disposition::Throw: throw std::system_error(make_error_code(ec));
             }
 
-            return encode_result{it, json_error::unknown_encoding_disposition};
+            return encode_result{ctx.it, json_error::unknown_encoding_disposition};
         }
 
         /// JSON-encode the given value to the given output iterator
-        template <std::output_iterator<char> OutputIt>
-        static constexpr inline auto encode_value (const value& val, OutputIt it,
-            encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        static constexpr inline auto encode_value (const value& val,
+            encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
-            const auto visitor = [it, policy](const auto& v) -> encode_result<OutputIt> {
+            const auto visitor = [&ctx](const auto& v) -> encode_result<OutputIt> {
                 if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object_ptr>) {
-                    return encode_object(*v.get(), it, policy);
+                    return encode_object(*v.get(), ctx);
                 }
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array_ptr>) {
-                    return encode_array(*v.get(), it, policy);
+                    return encode_array(*v.get(), ctx);
                 }
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, string>) {
-                    return encode_string(v, it, policy);
+                    return encode_string(v, ctx);
                 }
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, number>) {
-                    return encode_number(v, it, policy);
+                    return encode_number(v, ctx);
                 }
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, integer>) {
-                    return encode_integer(v, it, policy);
+                    return encode_integer(v, ctx);
                 }
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, bool>) {
-                    return encode_literal(v ? "true" : "false", it, policy);
+                    return encode_literal(v ? "true" : "false", ctx);
                 }
                 else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, nullptr_t>) {
-                    return encode_literal("null", it, policy);
+                    return encode_literal("null", ctx);
                 }
                 else {
-                    return encode_error(json_error::invalid_json_value, it, policy, policy.value_invalid);
+                    return encode_error(json_error::invalid_json_value, ctx, ctx.policy.value_invalid);
                 }
             };
 
@@ -444,137 +463,135 @@ public:
         }
 
         /// JSON-encode the given object to the given output iterator
-        template <std::output_iterator<char> OutputIt>
-        static auto encode_object(const object& val, OutputIt it,
-            encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        static auto encode_object(const object& val,
+            encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
-            *it++ = '{';
+            *ctx.it++ = '{';
 
             for (bool first = true; const auto& [mem_key,mem_val] : val) {
                 if (first) {
                     first = false;
                 }
                 else {
-                    *it++ = ',';
+                    *ctx.it++ = ',';
                 }
 
-                auto encode_result = encode_string(mem_key, it, policy);
+                auto encode_result = encode_string(mem_key, ctx);
                 if (!encode_result) {
                     return encode_result;
                 }
-                it = encode_result.it;
+                ctx.it = encode_result.it;
 
-                *it++ = ':';
-                encode_result = encode_value(mem_val, it, policy);
+                *ctx.it++ = ':';
+                encode_result = encode_value(mem_val, ctx);
                 if (!encode_result) {
                     return encode_result;
                 }
-                it = encode_result.it;
+                ctx.it = encode_result.it;
             }
 
-            *it++ = '}';
+            *ctx.it++ = '}';
 
-            return it;
+            return ctx.it;
         }
 
         /// JSON-encode the given array to the given output iterator
-        template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_array(const array& val, OutputIt it,
-            encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        static constexpr auto encode_array(const array& val,
+            encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
-            *it++ = '[';
+            *ctx.it++ = '[';
 
             for (bool first = true; const auto& e : val) {
                 if (first) {
                     first = false;
                 }
                 else {
-                    *it++ = ',';
+                    *ctx.it++ = ',';
                 }
 
-                auto encode_result = encode_value(e, it, policy);
+                auto encode_result = encode_value(e, ctx);
                 if (!encode_result) {
                     return encode_result;
                 }
-                it = encode_result.it;
+                ctx.it = encode_result.it;
             }
 
-            *it++ = ']';
+            *ctx.it++ = ']';
 
-            return it;
+            return ctx.it;
         }
 
         /// JSON-encode the given string to the given output iterator
-        template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_string(const string& val, OutputIt it,
-            [[maybe_unused]] encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        static constexpr auto encode_string(const string& val,
+            encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
-            *it++ = '"';
+            *ctx.it++ = '"';
 
             for (const auto& c : val) {
 
                 // Must escape double quote -> \" <-
                 if (c == '"') {
-                    *it++ = '\\';
-                    *it++ = '"';
+                    *ctx.it++ = '\\';
+                    *ctx.it++ = '"';
                 }
                 // Must escape reverse solidus -> \\ <-
                 else if (c == '\\') {
-                    *it++ = '\\';
-                    *it++ = '\\';
+                    *ctx.it++ = '\\';
+                    *ctx.it++ = '\\';
                 }
                 // Must escape control codes -> \u00XX <-
                 else if ((c >= 0) && (c <= 0x1F)) {
-                    *it++ = '\\';
-                    *it++ = 'u';
-                    *it++ = '0';
-                    *it++ = '0';
-                    *it++ = (c & 0x10) ? '1' : '0';
+                    *ctx.it++ = '\\';
+                    *ctx.it++ = 'u';
+                    *ctx.it++ = '0';
+                    *ctx.it++ = '0';
+                    *ctx.it++ = (c & 0x10) ? '1' : '0';
                     const auto nibble = c & 0xF;
-                    *it++ = (nibble < 10)
+                    *ctx.it++ = (nibble < 10)
                         ? static_cast<char>('0' + nibble)
                         : static_cast<char>('A' + nibble - 10);
                 }
                 // Everything else is passed thru
                 else {
-                    *it++ = c;
+                    *ctx.it++ = c;
                 }
             }
 
-            *it++ = '"';
+            *ctx.it++ = '"';
 
-            return it;
+            return ctx.it;
         }
 
         /// JSON-encode the given number to the given output iterator
-        template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_number(const number& val, OutputIt it,
-            encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        static constexpr auto encode_number(const number& val,
+            encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
             constexpr auto buf_len = std::numeric_limits<double>::max_digits10 + 8;
 
             if (std::isnan(val)) {
-                return encode_error(json_error::number_nan, it,
-                    policy, policy.number_nan);
+                return encode_error(json_error::number_nan, ctx, ctx.policy.number_nan);
             }
             if (std::isinf(val)) {
-                return encode_error(json_error::number_nan, it,
-                    policy, policy.number_inf);
+                return encode_error(json_error::number_nan, ctx, ctx.policy.number_inf);
             }
 
             std::array<char, buf_len> buf;
             auto* first = buf.data();
             auto* last  = buf.data() + buf.size();
             const auto [ptr, ec] = std::to_chars(first, last, val);
-            for (const auto* p = first; p != ptr; *it++ = *p++) {}
+            for (const auto* p = first; p != ptr; *ctx.it++ = *p++) {}
 
-            return it;
+            return ctx.it;
         }
 
         /// JSON-encode the given integer to the given output iterator
-        template <std::output_iterator<char> OutputIt>
-        static constexpr auto encode_integer(const integer& val, OutputIt it,
-            encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        static constexpr auto encode_integer(const integer& val,
+            encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
             constexpr auto buf_len = std::numeric_limits<integer>::digits10 + 2;
 
@@ -582,23 +599,23 @@ public:
             auto* first = buf.data();
             auto* last  = buf.data() + buf.size();
             const auto [ptr, ec] = std::to_chars(first, last, val);
-            for (const auto* p = first; p != ptr; *it++ = *p++) {}
+            for (const auto* p = first; p != ptr; *ctx.it++ = *p++) {}
 
-            return it;
+            return ctx.it;
         }
 
         /// Output the given literal string to the given output iterator
-        template <std::output_iterator<char> OutputIt>
-        static constexpr inline auto encode_literal(std::string_view literal, OutputIt it,
-        encode_policy policy = encode_policy{}) -> encode_result<OutputIt>
+        template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
+        static constexpr inline auto encode_literal(std::string_view literal,
+            encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
             // This guy is used to "encode" true, false, and null
 
             for (auto c : literal) {
-                *it++ = c;
+                *ctx.it++ = c;
             }
 
-            return it;
+            return ctx.it;
         }
 
         // -- Implementation
@@ -1121,4 +1138,4 @@ namespace std {
     struct is_error_code_enum<turner::json_error> : public true_type {};
 }
 
-#endif // ifndef zzz_I_assure_you_that_json_turner_dot_h_has_been_included
+#endif // ifndef zzz_I_assure_you_that_json_dot_h_has_been_included
