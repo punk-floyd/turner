@@ -59,8 +59,7 @@ enum class json_error {
 
     // Encode errors: [200,300)
     invalid_json_value = 200,
-    number_nan,
-    number_inf,
+    number_invalid,
     unknown_encoding_disposition
 };
 
@@ -92,15 +91,13 @@ struct encode_policy {
 
     // Construct using a common disposition
     constexpr explicit encode_policy(Disposition d) noexcept
-        : value_invalid(d), number_nan(d), number_inf(d)
+        : value_invalid(d), number_invalid(d)
     {}
 
     /// What to do when value is invalid (default constructed)
     Disposition value_invalid{Disposition::Fail};
-    /// What to do when a number is NaN
-    Disposition number_nan{Disposition::Fail};
-    /// What to do when a number is +/- infinity
-    Disposition number_inf{Disposition::Fail};
+    /// What to do when a number is invalid (NaN or infinity)
+    Disposition number_invalid{Disposition::Fail};
 };
 
 /// JSON decoding policy: adjusts decoding behavior
@@ -572,11 +569,8 @@ public:
         {
             constexpr auto buf_len = std::numeric_limits<double>::max_digits10 + 8;
 
-            if (std::isnan(val)) {
-                return encode_error(json_error::number_nan, ctx, ctx.policy.number_nan);
-            }
-            if (std::isinf(val)) {
-                return encode_error(json_error::number_nan, ctx, ctx.policy.number_inf);
+            if (std::isnan(val) || std::isinf(val)) {
+                return encode_error(json_error::number_invalid, ctx, ctx.policy.number_invalid);
             }
 
             std::array<char, buf_len> buf;

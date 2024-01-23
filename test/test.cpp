@@ -467,7 +467,7 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         const encode_policy policy_fail{encode_policy::Disposition::Fail};
         std::string s;
         auto res = bad_value.encode(std::back_inserter(s), policy_fail);
-        REQUIRE(res.err == json_error::number_nan);
+        REQUIRE(res.err == json_error::number_invalid);
 
         // Disposition::Null - Encode the item as a JSON null
         const encode_policy policy_null{encode_policy::Disposition::Null};
