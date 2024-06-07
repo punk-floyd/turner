@@ -7,11 +7,34 @@
  * @copyright Copyright (c) 2023 Mike DeKoker
  *
  */
+#include <string_view>
 #include <iostream>
-//#include <turner/json.h>
+#include <turner/json.h>
+
+using namespace turner;
+
+static constexpr auto test_src =
+    R"|({"person":{"name":"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|";
+
+template <class T = char>
+struct basic_pretty_printer {
+    // The unit of indentation for multiline output
+    static constexpr std::string_view json_indent = "    ";
+    // The padding to use between JSON tokens on the same line
+    static constexpr std::string_view json_pad    = " ";
+    // Print object/array members each on their own line
+    static constexpr auto json_linebreak_style = print_linebreak_style::MultiLine;
+};
+
+static_assert(printer_has_indent<basic_pretty_printer<char>>);
+static_assert(printer_has_padding<basic_pretty_printer<char>>);
+static_assert(printer_has_linebreak<basic_pretty_printer<char>>);
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
-    std::cout << "TODO: Parse and pretty/ugly print a JSON file\n";
-    std::cout << "Love,\n Mike.\n";
+    const json data(test_src);
+    const auto output =
+        data.get_value().encode(encode_policy{}, basic_pretty_printer{});
+
+    std::cout << output << '\n';
 }

@@ -33,12 +33,7 @@
 
 namespace turner {
 
-// This defines the behavior for the default JSON decoding policy
-#ifdef TURNER_DEFAULT_ALLOW_INTEGER_DECODE
-constexpr inline bool default_allow_integer_decode = true;
-#else
-constexpr inline bool default_allow_integer_decode = false;
-#endif
+// -- JSON error codes and support -----------------------------------------
 
 /// turner::json specific error codes
 enum class json_error {
@@ -63,6 +58,9 @@ enum class json_error {
     unknown_encoding_disposition
 };
 
+// turner::json hooks into the std::error_code framework. The rest of the
+// implementation details are way down below.
+
 // Defined way down below
 inline const std::error_category& json_category() noexcept;
 
@@ -77,6 +75,8 @@ inline std::error_condition make_error_condition(json_error e) noexcept
 {
     return std::error_condition{static_cast<int>(e), json_category()};
 }
+
+// -- JSON encoding and decoding policies ----------------------------------
 
 /// JSON encoding policy: adjusts encoding behavior
 struct encode_policy {
@@ -98,6 +98,8 @@ struct encode_policy {
     Disposition value_invalid{Disposition::Fail};
     /// What to do when a number is invalid (NaN or infinity)
     Disposition number_invalid{Disposition::Fail};
+
+    // MDTODO : bool escape_whitespace{false};
 };
 
 /// JSON decoding policy: adjusts decoding behavior
@@ -113,11 +115,101 @@ struct decode_policy {
 
     /// If true, expect to parse the whole input range
     bool    greedy{true};
+
     /// Allow decode to parse apparent integers as integers
-    bool    allow_integer_decode{default_allow_integer_decode};
+#ifdef TURNER_DEFAULT_ALLOW_INTEGER_DECODE
+    bool    allow_integer_decode{true};
+#else
+    bool    allow_integer_decode{false};
+#endif
+
     /// What to do if we encounter an object member name that's already been parsed
     NonUniqueDisposition non_unique_member_name_disposition{NonUniqueDisposition::Overwrite};
 };
+
+// -- JSON pretty print support types --------------------------------------
+
+// The line break style defines how objects and arrays are printed
+enum class print_linebreak_style {
+    OneLine,        ///< Print all members/elements on one line
+    MultiLine       ///< Print each member/element on a new line
+};
+
+namespace imp {
+
+    // -- Line breaks ------------------------------------------------------
+
+    // A type defines a linebreak style if defines a json_linebreak_style
+    // member (either static or non-static). The linebreak style determines
+    // how to print objects and arrays.
+    template <class T>
+    concept linebreak_spec = requires(const T& t)
+    {
+        // Static member
+        {T::json_linebreak_style} -> std::convertible_to<print_linebreak_style>;
+        // Or non-static member
+        {t.json_linebreak_style}  -> std::convertible_to<print_linebreak_style>;
+    };
+
+    template <class T>          struct has_linespec    : public std::false_type {};
+    template <linebreak_spec T> struct has_linespec<T> : public std::true_type  {};
+
+    // -- Indentation ------------------------------------------------------
+
+    // A type defines the JSON indent string if it defines a json_indent
+    // member (either static or non-static) that can be converted to a
+    // std::string_view. The indent string is the basic unit of indentation
+    // when displaying multiline output for objects or arrays.
+    template <class T>
+    concept indent_spec = requires(const T& t)
+    {
+        // Static member
+        {T::json_indent} -> std::convertible_to<std::string_view>;
+        // Or non-static member
+        {t.json_indent}  -> std::convertible_to<std::string_view>;
+    };
+
+    template <class T>       struct has_indent    : public std::false_type {};
+    template <indent_spec T> struct has_indent<T> : public std::true_type  {};
+
+    // -- Padding ----------------------------------------------------------
+
+    // A type defines the JSON padding string if it defines a json_padding
+    // member (either static or non-static) that can be converted to a
+    // std::string_view. The padding string is used between JSON tokens on
+    // the same line.
+    template <class T>
+    concept padding_spec = requires(const T& t)
+    {
+        // Static member
+        {T::json_padding} -> std::convertible_to<std::string_view>;
+        // Or non-static member
+        {t.json_padding}  -> std::convertible_to<std::string_view>;
+    };
+
+    template <class T>       struct has_padding    : public std::false_type {};
+    template <indent_spec T> struct has_padding<T> : public std::true_type  {};
+
+    // -- Printer wrapper --------------------------------------------------
+
+    // Base class to handle T&? I_AM_HERE
+
+
+    template <class T>          struct print_wrap    { T& printer; };
+    template <indent_spec T>    struct print_wrap<T> { T& printer; size_t indent{}; };
+
+}   // nameapce imp
+
+template <class T>
+inline constexpr bool printer_has_indent = imp::has_indent<T>::value;
+
+template <class T>
+inline constexpr bool printer_has_padding = imp::has_padding<T>::value;
+
+template <class T>
+inline constexpr bool printer_has_linebreak = imp::has_linespec<T>::value;
+
+// -- Without further ado, the json class ----------------------------------
 
 /// JSON encoder/decoder
 class json
@@ -155,7 +247,7 @@ public:
         : json(std::string_view(src), policy)
     { }
 
-    // -- Decoding
+    // -- Decoding (Parsing JSON into data)
 
     /// The result of a decode method
     template <std::input_iterator InputIt>
@@ -371,9 +463,9 @@ public:
 
         template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
         struct encode_context {
-            OutputIt            it;
-            encode_policy       policy;
-            PrintPolicy<char>   print;
+            OutputIt                            it;
+            encode_policy                       policy;
+            imp::print_wrap<PrintPolicy<char>>  print;
         };
 
         /// JSON encode value to an output iterator
