@@ -74,11 +74,14 @@
         "__verbose_abort": "cpp",
         "ios": "cpp",
         "locale": "cpp",
-        "queue": "cpp"
+        "queue": "cpp",
+        "format": "cpp",
+        "span": "cpp"
     },
     "cSpell.words": [
         "bugprone",
         "Koker",
+        "linebreak",
         "swappable"
     ]
 }

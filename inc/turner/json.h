@@ -143,16 +143,13 @@ namespace imp {
     // member (either static or non-static). The linebreak style determines
     // how to print objects and arrays.
     template <class T>
-    concept linebreak_spec = requires(const T& t)
+    concept line_break_spec = requires(const T& t)
     {
-        // Static member
-        {T::json_linebreak_style} -> std::convertible_to<print_linebreak_style>;
-        // Or non-static member
         {t.json_linebreak_style}  -> std::convertible_to<print_linebreak_style>;
     };
 
-    template <class T>          struct has_linespec    : public std::false_type {};
-    template <linebreak_spec T> struct has_linespec<T> : public std::true_type  {};
+    template <class T>           struct has_line_spec    : public std::false_type {};
+    template <line_break_spec T> struct has_line_spec<T> : public std::true_type  {};
 
     // -- Indentation ------------------------------------------------------
 
@@ -163,9 +160,6 @@ namespace imp {
     template <class T>
     concept indent_spec = requires(const T& t)
     {
-        // Static member
-        {T::json_indent} -> std::convertible_to<std::string_view>;
-        // Or non-static member
         {t.json_indent}  -> std::convertible_to<std::string_view>;
     };
 
@@ -181,9 +175,6 @@ namespace imp {
     template <class T>
     concept padding_spec = requires(const T& t)
     {
-        // Static member
-        {T::json_padding} -> std::convertible_to<std::string_view>;
-        // Or non-static member
         {t.json_padding}  -> std::convertible_to<std::string_view>;
     };
 
@@ -192,13 +183,10 @@ namespace imp {
 
     // -- Printer wrapper --------------------------------------------------
 
-    // Base class to handle T&? I_AM_HERE
-
-
     template <class T>          struct print_wrap    { T& printer; };
     template <indent_spec T>    struct print_wrap<T> { T& printer; size_t indent{}; };
 
-}   // nameapce imp
+}   // namespace imp
 
 template <class T>
 inline constexpr bool printer_has_indent = imp::has_indent<T>::value;
@@ -207,7 +195,7 @@ template <class T>
 inline constexpr bool printer_has_padding = imp::has_padding<T>::value;
 
 template <class T>
-inline constexpr bool printer_has_linebreak = imp::has_linespec<T>::value;
+inline constexpr bool printer_has_linebreak = imp::has_line_spec<T>::value;
 
 // -- Without further ado, the json class ----------------------------------
 
@@ -475,8 +463,8 @@ public:
             encode_policy policy = encode_policy{}, PrintPolicy<char> print = {}) const
             -> encode_result<OutputIt>
         {
-            encode_context ctx = {
-                .it = it,
+            encode_context<OutputIt, PrintPolicy> ctx {
+                .it     = it,
                 .policy = policy,
                 .print  = print
             };
@@ -557,6 +545,17 @@ public:
             encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
             *ctx.it++ = '{';
+
+#if 0
+            // -- MOOMOO; goofing around with this
+            if constexpr (printer_has_linebreak<PrintPolicy<char>>) {
+                *ctx.it++ = '\n';
+            }
+            else if constexpr(printer_has_padding<PrintPolicy<char>>) {
+                ctx.it = encode_literal(ctx.print.printer.json_padding, ctx);
+            }
+            // --
+#endif
 
             for (bool first = true; const auto& [mem_key,mem_val] : val) {
                 if (first) {
@@ -818,9 +817,9 @@ protected:
         // Try to match against a keyword token: "true", "false", or "null"
         const auto try_match = [&p_ctx](std::string_view word, TokenType t) noexcept
         {
-            const auto* wit = word.begin();
-            for (; !p_ctx.empty() && (wit != word.end()) && (*p_ctx.it_at == *wit); ++p_ctx.it_at, ++wit) {}
-            if (wit == word.end()) {
+            auto wit = word.cbegin();
+            for (; !p_ctx.empty() && (wit != word.cend()) && (*p_ctx.it_at == *wit); ++p_ctx.it_at, ++wit) {}
+            if (wit == word.cend()) {
                 return t;
             }
 
