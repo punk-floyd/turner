@@ -178,75 +178,75 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
     SECTION ("Parse objects: Empty object") {
         REQUIRE (uut.decode(R"|({})|"));
         REQUIRE (uut.get_value().is_object());
-        REQUIRE (uut.get_value().get_object()->empty());
+        REQUIRE (uut.get_value().get_object().empty());
     }
     SECTION ("Parse objects: Basic object") {
         REQUIRE (uut.decode(R"|({"name":"John Doe","age":30,"city":"New York"})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
-        REQUIRE (obj->size() == 3);
-        REQUIRE (obj->contains("name"));
-        REQUIRE (obj->contains("age"));
-        REQUIRE (obj->contains("city"));
+        REQUIRE (obj.size() == 3);
+        REQUIRE (obj.contains("name"));
+        REQUIRE (obj.contains("age"));
+        REQUIRE (obj.contains("city"));
     }
     SECTION ("Parse objects: Nested object") {
         REQUIRE (uut.decode(R"|({"person":{"name":"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
-        REQUIRE (obj->size() == 2);
-        REQUIRE (obj->contains("occupation"));
-        REQUIRE (obj->contains("person"));
+        REQUIRE (obj.size() == 2);
+        REQUIRE (obj.contains("occupation"));
+        REQUIRE (obj.contains("person"));
     }
     SECTION ("Parse objects: Array of objects") {
         REQUIRE (uut.decode(R"|([{"id":1,"name":"Item 1"},{"id":2,"name":"Item 2"},{"id":3,"name":"Item 3"}])|"));
         REQUIRE (uut.get_value().is_array());
-        REQUIRE (uut.get_value().get_array()->size() == 3);
+        REQUIRE (uut.get_value().get_array().size() == 3);
     }
     SECTION ("Parse objects: Object with Array Property") {
         REQUIRE (uut.decode(R"|({"colors":["red","green","blue"],"status":"active"})|"));
         REQUIRE (uut.get_value().is_object());
-        REQUIRE (uut.get_value().get_object()->size() == 2);
+        REQUIRE (uut.get_value().get_object().size() == 2);
     }
     SECTION ("Parse objects: Boolean and null values") {
         REQUIRE (uut.decode(R"|({"isStudent":true,"hasCar":false,"grades":null})|"));
         REQUIRE (uut.get_value().is_object());
         const auto& obj = uut.get_value().get_object();
-        REQUIRE (obj->size() == 3);
-        REQUIRE (obj->contains("isStudent"));
-        REQUIRE (obj->contains("hasCar"));
-        REQUIRE (obj->contains("grades"));
+        REQUIRE (obj.size() == 3);
+        REQUIRE (obj.contains("isStudent"));
+        REQUIRE (obj.contains("hasCar"));
+        REQUIRE (obj.contains("grades"));
     }
 
     // -- Arrays
     SECTION ("Parse arrays: Empty array") {
         REQUIRE (uut.decode(R"|([])|"));
         REQUIRE (uut.get_value().is_array());
-        REQUIRE (uut.get_value().get_array()->empty());
+        REQUIRE (uut.get_value().get_array().empty());
     }
     SECTION ("Parse arrays: Basic array") {
         REQUIRE (uut.decode(R"|(["apple", "banana", "orange"])|"));
         REQUIRE (uut.get_value().is_array());
-        REQUIRE (uut.get_value().get_array()->size() == 3);
+        REQUIRE (uut.get_value().get_array().size() == 3);
     }
     SECTION ("Parse arrays: Array of numbers") {
         REQUIRE (uut.decode(R"|([42, 3.14, -7, 0])|"));
         REQUIRE (uut.get_value().is_array());
-        REQUIRE (uut.get_value().get_array()->size() == 4);
+        REQUIRE (uut.get_value().get_array().size() == 4);
     }
     SECTION ("Parse arrays: Array of objects") {
         REQUIRE (uut.decode(R"|([{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}, {"id": 3, "name": "Item 3"}])|"));
         REQUIRE (uut.get_value().is_array());
-        REQUIRE (uut.get_value().get_array()->size() == 3);
+        REQUIRE (uut.get_value().get_array().size() == 3);
     }
     SECTION ("Parse arrays: Nested arrays") {
         REQUIRE (uut.decode(R"|([[1, 2, 3], ["a", "b", "c"], [true, false, null]])|"));
         REQUIRE (uut.get_value().is_array());
-        REQUIRE (uut.get_value().get_array()->size() == 3);
+        REQUIRE (uut.get_value().get_array().size() == 3);
     }
     SECTION ("Parse arrays: Array with mixed types") {
         REQUIRE (uut.decode(R"|(["John Doe", 30, true, null])|"));
         REQUIRE (uut.get_value().is_array());
-        REQUIRE (uut.get_value().get_array()->size() == 4);
+        REQUIRE (uut.get_value().get_array().size() == 4);
     }
 }
 
@@ -302,7 +302,7 @@ TEST_CASE ("Simple runtime parsing check (Greediness)" "[parsing]") {
 TEST_CASE ("Object member name uniqueness" "[parsing]") {
 
     // A JSON object with two members that have the same name
-    const auto source = R"|({"foo" : false, "foo" : true})|";
+    const auto* source = R"|({"foo" : false, "foo" : true})|";
 
     json uut;
 
@@ -316,8 +316,8 @@ TEST_CASE ("Object member name uniqueness" "[parsing]") {
         REQUIRE(uut.get_value().is_object());
 
         const auto& obj = uut.get_value().get_object();
-        const auto it  = obj->find("foo");
-        REQUIRE(it != obj->cend());
+        const auto it  = obj.find("foo");
+        REQUIRE(it != obj.cend());
         REQUIRE(it->second.is_bool());
         REQUIRE(it->second.get_bool());
     }
@@ -405,9 +405,9 @@ TEST_CASE ("JSON encoding" "[encoding]") {
         REQUIRE(json::value{0}.encode() == "0");
 
         // Any integer value in the range +/- 2^53 can be represented in a
-        // IEEE 754 double precision floaing point value.
-        REQUIRE(json::value{ 9007199254740992ll}.encode() ==  "9007199254740992");
-        REQUIRE(json::value{-9007199254740992ll}.encode() == "-9007199254740992");
+        // IEEE 754 double precision floating point value.
+        REQUIRE(json::value{ 9007199254740992LL}.encode() ==  "9007199254740992");
+        REQUIRE(json::value{-9007199254740992LL}.encode() == "-9007199254740992");
     }
 
     SECTION("Encode string") {
@@ -426,32 +426,32 @@ TEST_CASE ("JSON encoding" "[encoding]") {
 
         // Manually create an array
         auto a_ray = json::make_array();
-        a_ray->emplace_back(true);
-        a_ray->emplace_back(false);
-        a_ray->emplace_back(nullptr);
-        a_ray->emplace_back(0.0);
-        a_ray->emplace_back("snake");
-        a_ray->emplace_back(json::make_object());
+        a_ray.emplace_back(true);
+        a_ray.emplace_back(false);
+        a_ray.emplace_back(nullptr);
+        a_ray.emplace_back(0.0);
+        a_ray.emplace_back("snake");
+        a_ray.emplace_back(json::object{});
         const json::value v1{std::move(a_ray)};
         REQUIRE(v1.encode() == encode_expect);
 
         // Use the make_array helper
-        auto also_a_ray = json::make_array(true, false, nullptr, 0.0, "snake", json::make_object());
+        auto also_a_ray = json::make_array(true, false, nullptr, 0.0, "snake", json::object{});
         const json::value v2{std::move(also_a_ray)};
         REQUIRE(v2.encode() == encode_expect);
     }
 
     SECTION("Encode object") {
-        REQUIRE(json::value{json::make_object()}.encode() == "{}");
+        REQUIRE(json::value{json::object{}}.encode() == "{}");
 
-        auto obj = json::make_object();
-        obj->emplace(std::make_pair("a", "dog"));
-        obj->emplace(std::make_pair("b",  0.0));
-        obj->emplace(std::make_pair("c",  nullptr));
-        obj->emplace(std::make_pair("d",  true));
-        obj->emplace(std::make_pair("e",  false));
-        obj->emplace(std::make_pair("f",  json::make_array()));
-        obj->emplace(std::make_pair("g",  json::make_object()));
+        auto obj = json::object{};
+        obj.emplace(std::make_pair("a", "dog"));
+        obj.emplace(std::make_pair("b",  0.0));
+        obj.emplace(std::make_pair("c",  nullptr));
+        obj.emplace(std::make_pair("d",  true));
+        obj.emplace(std::make_pair("e",  false));
+        obj.emplace(std::make_pair("f",  json::make_array()));
+        obj.emplace(std::make_pair("g",  json::object{}));
         const json::value v{std::move(obj)};
 
         constexpr std::string_view encode_expect =

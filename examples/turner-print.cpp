@@ -30,8 +30,8 @@ static_assert(printer_has_indent<basic_pretty_printer<char>>);
 static_assert(printer_has_padding<basic_pretty_printer<char>>);
 static_assert(printer_has_linebreak<basic_pretty_printer<char>>);
 
-int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
-{
+int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])  // NOLINT(bugprone-exception-escape)
+{                                                                   // ^^^^^^-- MOOMOO : Temporary
     const json data(test_src);
     const auto output =
         data.get_value().encode(encode_policy{}, basic_pretty_printer{});

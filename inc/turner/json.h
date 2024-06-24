@@ -20,6 +20,7 @@
 #include <concepts>
 #include <optional>
 #include <iterator>
+#include <cstdint>
 #include <fstream>
 #include <variant>
 #include <ranges>
@@ -36,7 +37,7 @@ namespace turner {
 // -- JSON error codes and support -----------------------------------------
 
 /// turner::json specific error codes
-enum class json_error {
+enum class json_error {             // NOLINT(readability-enum-initial-value,performance-enum-size)
     // Decode errors: [100,200)
     unexpected_token = 100,
     unterminated_array,
@@ -81,7 +82,7 @@ inline std::error_condition make_error_condition(json_error e) noexcept
 /// JSON encoding policy: adjusts encoding behavior
 struct encode_policy {
 
-    enum class Disposition : unsigned char {
+    enum class Disposition : std::uint8_t {
         Fail,           ///< Fail encoding operation
         Null,           ///< Replace offending item with a JSON null
         Throw           ///< Throw system_error (json_error)
@@ -107,7 +108,7 @@ struct decode_policy {
 
     constexpr decode_policy() noexcept = default;
 
-    enum class NonUniqueDisposition : unsigned char {
+    enum class NonUniqueDisposition : std::uint8_t {
         Overwrite,      ///< Overwrite the existing value
         Fail,           ///< Fail encoding operation
         Throw           ///< Throw system_error (json_error)
@@ -130,7 +131,7 @@ struct decode_policy {
 // -- JSON pretty print support types --------------------------------------
 
 // The line break style defines how objects and arrays are printed
-enum class print_linebreak_style {
+enum class print_linebreak_style : std::uint8_t {
     OneLine,        ///< Print all members/elements on one line
     MultiLine       ///< Print each member/element on a new line
 };
@@ -345,13 +346,10 @@ public:
     using number = double;
     using integer = int64_t;
 
-    using object_ptr = std::unique_ptr<object>;
-    using array_ptr  = std::unique_ptr<array>;
-
     using value_variant = std::variant <
         nullptr_t,      // null
-        object_ptr,     // { ... }
-        array_ptr,      // [ ... ]
+        object,         // { ... }
+        array,          // [ ... ]
         string,         //  "..."
         number,         // 123.456
         integer,        // 123  (non standard for decoding)
@@ -377,53 +375,53 @@ public:
 
         // -- Observers
 
-        constexpr bool is_object() const noexcept { return is<object_ptr>(); }
-        [[nodiscard]] constexpr       object_ptr&  get_object()       &           { return get<object_ptr>(); }
-        [[nodiscard]] constexpr const object_ptr&  get_object() const &           { return get<object_ptr>(); }
-        [[nodiscard]] constexpr       object_ptr&& get_object()       &&          { return std::move(get<object_ptr>()); }
-        [[nodiscard]] constexpr       object_ptr*  get_object_if()       noexcept { return try_get<object_ptr>(); }
-        [[nodiscard]] constexpr const object_ptr*  get_object_if() const noexcept { return try_get<object_ptr>(); }
+        [[nodiscard]] constexpr bool is_object() const noexcept { return is<object>(); }
+        [[nodiscard]] constexpr       object&  get_object()       &           { return get<object>(); }
+        [[nodiscard]] constexpr const object&  get_object() const &           { return get<object>(); }
+        [[nodiscard]] constexpr       object&& get_object()       &&          { return std::move(get<object>()); }
+        [[nodiscard]] constexpr       object*  get_object_if()       noexcept { return try_get<object>(); }
+        [[nodiscard]] constexpr const object*  get_object_if() const noexcept { return try_get<object>(); }
 
-        constexpr bool is_array()  const noexcept { return is<array_ptr>(); }
-        [[nodiscard]] constexpr       array_ptr&   get_array()       &            { return get<array_ptr>(); }
-        [[nodiscard]] constexpr const array_ptr&   get_array() const &            { return get<array_ptr>(); }
-        [[nodiscard]] constexpr       array_ptr&&  get_array()       &&           { return std::move(get<array_ptr>()); }
-        [[nodiscard]] constexpr       array_ptr*   get_array_if()       noexcept  { return try_get<array_ptr>(); }
-        [[nodiscard]] constexpr const array_ptr*   get_array_if() const noexcept  { return try_get<array_ptr>(); }
+        [[nodiscard]] constexpr bool is_array()  const noexcept { return is<array>(); }
+        [[nodiscard]] constexpr       array&   get_array()       &            { return get<array>(); }
+        [[nodiscard]] constexpr const array&   get_array() const &            { return get<array>(); }
+        [[nodiscard]] constexpr       array&&  get_array()       &&           { return std::move(get<array>()); }
+        [[nodiscard]] constexpr       array*   get_array_if()       noexcept  { return try_get<array>(); }
+        [[nodiscard]] constexpr const array*   get_array_if() const noexcept  { return try_get<array>(); }
 
-        constexpr bool is_string() const noexcept { return is<string>(); }
+        [[nodiscard]] constexpr bool is_string() const noexcept { return is<string>(); }
         [[nodiscard]] constexpr       string&      get_string()       &            { return get<string>(); }
         [[nodiscard]] constexpr const string&      get_string() const &            { return get<string>(); }
         [[nodiscard]] constexpr       string&&     get_string()      &&            { return std::move(get<string>()); }
         [[nodiscard]] constexpr       string*      get_string_if()       noexcept  { return try_get<string>(); }
         [[nodiscard]] constexpr const string*      get_string_if() const noexcept  { return try_get<string>(); }
 
-        constexpr bool is_number() const noexcept { return is<number>(); }
+        [[nodiscard]] constexpr bool is_number() const noexcept { return is<number>(); }
         [[nodiscard]] constexpr       number&      get_number()                    { return get<number>(); }
         [[nodiscard]] constexpr const number&      get_number() const              { return get<number>(); }
         [[nodiscard]] constexpr       number*      get_number_if()       noexcept  { return try_get<number>(); }
         [[nodiscard]] constexpr const number*      get_number_if() const noexcept  { return try_get<number>(); }
 
-        constexpr bool is_integer() const noexcept { return is<integer>(); }
+        [[nodiscard]] constexpr bool is_integer() const noexcept { return is<integer>(); }
         [[nodiscard]] constexpr       integer&     get_integer()                   { return get<integer>(); }
         [[nodiscard]] constexpr const integer&     get_integer() const             { return get<integer>(); }
         [[nodiscard]] constexpr       integer*     get_integer_if()       noexcept { return try_get<integer>(); }
         [[nodiscard]] constexpr const integer*     get_integer_if() const noexcept { return try_get<integer>(); }
 
-        constexpr bool is_bool()   const noexcept { return is<bool>();  }
+        [[nodiscard]] constexpr bool is_bool()   const noexcept { return is<bool>();  }
         [[nodiscard]] constexpr       bool&        get_bool()                      { return get<bool>(); }
         [[nodiscard]] constexpr const bool&        get_bool() const                { return get<bool>(); }
         [[nodiscard]] constexpr       bool*        get_bool_if()       noexcept    { return try_get<bool>(); }
         [[nodiscard]] constexpr const bool*        get_bool_if() const noexcept    { return try_get<bool>(); }
 
-        constexpr bool is_null()   const noexcept { return is<nullptr_t>(); }
+        [[nodiscard]] constexpr bool is_null()   const noexcept { return is<nullptr_t>(); }
         [[nodiscard]] constexpr       nullptr_t&   get_null()                      { return get<nullptr_t>(); }
         [[nodiscard]] constexpr const nullptr_t&   get_null() const                { return get<nullptr_t>(); }
         [[nodiscard]] constexpr       nullptr_t*   get_null_if()       noexcept    { return try_get<nullptr_t>(); }
         [[nodiscard]] constexpr const nullptr_t*   get_null_if() const noexcept    { return try_get<nullptr_t>(); }
 
         template <typename T>
-        inline constexpr bool is() const noexcept
+        [[nodiscard]] constexpr bool is() const noexcept
             { return std::holds_alternative<T>(*this); }
 
         // -- Encoding
@@ -459,7 +457,7 @@ public:
         /// JSON encode value to an output iterator
         template <std::output_iterator<char> OutputIt,
             template <typename> class PrintPolicy = NoPrettyPrint>
-        [[nodiscard]] constexpr inline auto encode(OutputIt it,
+        [[nodiscard]] auto encode(OutputIt it,
             encode_policy policy = encode_policy{}, PrintPolicy<char> print = {}) const
             -> encode_result<OutputIt>
         {
@@ -474,7 +472,7 @@ public:
 
         /// JSON encode value to a string
         template <template <typename> class PrintPolicy = NoPrettyPrint>
-        [[nodiscard]] std::string inline encode(encode_policy policy = encode_policy{},
+        [[nodiscard]] std::string encode(encode_policy policy = encode_policy{},
             PrintPolicy<char> print = {}) const
         {
             std::string s;
@@ -506,34 +504,26 @@ public:
 
         /// JSON-encode the given value to the given output iterator
         template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
-        static constexpr inline auto encode_value (const value& val,
+        static auto encode_value (const value& val,
             encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
             const auto visitor = [&ctx](const auto& v) -> encode_result<OutputIt> {
-                if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object_ptr>) {
-                    return encode_object(*v.get(), ctx);
-                }
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array_ptr>) {
-                    return encode_array(*v.get(), ctx);
-                }
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, string>) {
+                if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object>)
+                    return encode_object(v, ctx);
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array>)
+                    return encode_array(v, ctx);
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, string>)
                     return encode_string(v, ctx);
-                }
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, number>) {
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, number>)
                     return encode_number(v, ctx);
-                }
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, integer>) {
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, integer>)
                     return encode_integer(v, ctx);
-                }
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, bool>) {
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, bool>)
                     return encode_literal(v ? "true" : "false", ctx);
-                }
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, nullptr_t>) {
+                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, nullptr_t>)
                     return encode_literal("null", ctx);
-                }
-                else {
+                else
                     return encode_error(json_error::invalid_json_value, ctx, ctx.policy.value_invalid);
-                }
             };
 
             return std::visit(visitor, static_cast<const value_variant&>(val));
@@ -546,7 +536,7 @@ public:
         {
             *ctx.it++ = '{';
 
-#if 0
+/*
             // -- MOOMOO; goofing around with this
             if constexpr (printer_has_linebreak<PrintPolicy<char>>) {
                 *ctx.it++ = '\n';
@@ -555,7 +545,7 @@ public:
                 ctx.it = encode_literal(ctx.print.printer.json_padding, ctx);
             }
             // --
-#endif
+*/
 
             for (bool first = true; const auto& [mem_key,mem_val] : val) {
                 if (first) {
@@ -691,7 +681,7 @@ public:
 
         /// Output the given literal string to the given output iterator
         template <std::output_iterator<char> OutputIt, template <typename> class PrintPolicy>
-        static constexpr inline auto encode_literal(std::string_view literal,
+        static auto encode_literal(std::string_view literal,
             encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
             // This guy is used to "encode" true, false, and null
@@ -709,45 +699,19 @@ public:
         // because std::unique_ptr isn't copyable.
 
         ~value() = default;
-        value(value&&) noexcept             = default;
-        value& operator=(value&&) noexcept  = default;
-
-        value(const value& other)
-            : value_variant(value_variant_deep_copy(other))
-        {}
-
-        value& operator=(const value& other)
-        {
-            static_cast<value_variant&>(*this) = value_variant_deep_copy(other);
-            return *this;
-        }
+        value(value&&) noexcept              = default;
+        value& operator=(value&&) noexcept   = default;
+        value(const value& other)            = default;
+        value& operator=(const value& other) = default;
 
     private:
-
-        // Return a copy of the given value_variant
-        value_variant value_variant_deep_copy(const value_variant& other)
-        {
-            auto deep_copy = [](const auto& v) -> value_variant {
-                if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object_ptr>) {
-                    return std::make_unique<object>(*v.get());
-                }
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array_ptr>) {
-                    return std::make_unique<array>(*v.get());
-                }
-                else {
-                    return v;
-                }
-            };
-
-            return std::visit(deep_copy, other);
-        }
 
         // I'd use a concept here, but we can't forward declare an inner class
         // and I'd like to keep everything tucked into the class.
         template <typename T>
         struct type_json_value_type : std::bool_constant<
-            std::is_same_v<std::remove_cv_t<T>, object_ptr> ||
-            std::is_same_v<std::remove_cv_t<T>, array_ptr>  ||
+            std::is_same_v<std::remove_cv_t<T>, object>     ||
+            std::is_same_v<std::remove_cv_t<T>, array>      ||
             std::is_same_v<std::remove_cv_t<T>, string>     ||
             std::is_same_v<std::remove_cv_t<T>, number>     ||
             std::is_same_v<std::remove_cv_t<T>, integer>    ||
@@ -756,47 +720,40 @@ public:
         > {};
 
         template <typename T>
-        static inline constexpr bool is_json_value_type = type_json_value_type<T>::value;
+        static constexpr bool is_json_value_type = type_json_value_type<T>::value;
 
         /// Get value as lvalue reference
         template <typename T>
             requires (is_json_value_type<T>)
-        constexpr T& get() & { return std::get<T>(*this); }
+        [[nodiscard]] constexpr T& get() & { return std::get<T>(*this); }
 
         /// Get value as const lvalue reference
         template <typename T>
             requires (is_json_value_type<T>)
-        constexpr const T& get() const & { return std::get<T>(*this); }
+        [[nodiscard]] constexpr const T& get() const & { return std::get<T>(*this); }
 
         /// Get value as rvalue reference
         template <typename T>
             requires (is_json_value_type<T>)
-        constexpr T&& get() && { return std::get<T>(std::move(*this)); }
+        [[nodiscard]] constexpr T&& get() && { return std::get<T>(std::move(*this)); }
 
         /// Get pointer to value if type matches or nullptr otherwise
         template <typename T>
             requires (is_json_value_type<T>)
-        constexpr T* try_get() noexcept { return std::get_if<T>(this); }
+        [[nodiscard]] constexpr T* try_get() noexcept { return std::get_if<T>(this); }
 
         /// Get const pointer to value if type matches or nullptr otherwise
         template <typename T>
             requires (is_json_value_type<T>)
-        constexpr const T* try_get() const noexcept { return std::get_if<T>(this); }
+        [[nodiscard]] constexpr const T* try_get() const noexcept { return std::get_if<T>(this); }
     };
-
-    /// Make a JSON object
-    static auto make_object()
-    {
-        return std::make_unique<object>();
-    }
 
     /// Make a JSON array populated with zero or more values
     template <class... Values>
         requires (std::is_constructible_v<value, Values> && ...)
     static auto make_array(Values&&... values)
     {
-        return std::make_unique<array>(
-            std::initializer_list<value>{ std::forward<Values>(values)... });
+        return json::array(std::initializer_list<value>{ std::forward<Values>(values)... });
     }
 
 protected:
@@ -804,7 +761,7 @@ protected:
     // -- Parsing ----------------------------------------------------------
 
     // Defines a token type
-    enum class TokenType {
+    enum class TokenType : std::uint8_t {
         NotAToken, EndOfInput,
         ObjectStart, ObjectEnd, ArrayStart, ArrayEnd, Comma, Colon,
         String, Number, True, False, Null
@@ -817,7 +774,7 @@ protected:
         // Try to match against a keyword token: "true", "false", or "null"
         const auto try_match = [&p_ctx](std::string_view word, TokenType t) noexcept
         {
-            auto wit = word.cbegin();
+            auto wit = word.cbegin(); // NOLINT(readability-qualified-auto)
             for (; !p_ctx.empty() && (wit != word.cend()) && (*p_ctx.it_at == *wit); ++p_ctx.it_at, ++wit) {}
             if (wit == word.cend()) {
                 return t;
@@ -857,14 +814,14 @@ protected:
         }
     }
 
-    constexpr static inline bool is_whitespace(int ch) noexcept
+    constexpr static bool is_whitespace(int ch) noexcept
     {
         return (ch == ' ') || (ch == '\n') || (ch == '\r') || (ch == '\t');
     }
 
     // Consume whitespace; returns true if we have no more input
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr inline bool eat_whitespace(parse_ctx<InputIt, Stop>& p_ctx) const noexcept
+    bool eat_whitespace(parse_ctx<InputIt, Stop>& p_ctx) const noexcept
     {
         for (; !p_ctx.empty() && is_whitespace(*p_ctx.it_at); ++p_ctx.it_at) {}
         return p_ctx.empty();
@@ -896,10 +853,10 @@ protected:
 
         // Convert into UTF-8 byte(s) and emit. This can result in 1-3 bytes
         // of output depending on the hex value.
-        if (hex_val <= 0x7F) {
+        if (hex_val <= 0x7F) {  // NOLINT(readability-magic-numbers)
             *out_it++ = static_cast<char>(hex_val);
         }
-        else if (hex_val <= 0x7FF) {
+        else if (hex_val <= 0x7FF) {    // NOLINT(readability-magic-numbers)
             const unsigned b1 = 0b11000000 | (hex_val >> 6);
             const unsigned b2 = 0b10000000 | (hex_val & 0x3F);
             *out_it++ = static_cast<char>(b1);
@@ -1022,11 +979,11 @@ protected:
 
     // Parse an object definition
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] object_ptr parse_object(parse_ctx<InputIt, Stop>& p_ctx) const
+    [[nodiscard]] object parse_object(parse_ctx<InputIt, Stop>& p_ctx) const
     {
         // The calling parser has already consumed the opening '{'
 
-        auto ret = std::make_unique<object>();
+        object ret;
 
         bool first_loop = true;
 
@@ -1062,7 +1019,7 @@ protected:
             }
 
             // Handle non-unique member name; e.g.: { "foo" : 1, "foo" : 2 }
-            if (ret->contains(name)) {
+            if (ret.contains(name)) {
                 const auto dispo = p_ctx.policy.non_unique_member_name_disposition;
                 if (dispo == decode_policy::NonUniqueDisposition::Throw)
                     throw std::system_error(make_error_code(json_error::nonunique_member_name));
@@ -1074,7 +1031,7 @@ protected:
             }
 
             // Insert the item into the map
-            ret->insert_or_assign(std::move(name), std::move(val));
+            ret.insert_or_assign(std::move(name), std::move(val));
 
             // Next token must be ',' or '}'
             token = next_token(p_ctx);
@@ -1095,11 +1052,11 @@ protected:
 
     // Parse an object definition
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] array_ptr parse_array(parse_ctx<InputIt, Stop>& p_ctx) const
+    [[nodiscard]] array parse_array(parse_ctx<InputIt, Stop>& p_ctx) const
     {
         // The calling parser has already consumed the opening '['
 
-        auto ret = std::make_unique<array>();
+        array ret;
 
         // First check for any empty array. This will simplify the general case below
 
@@ -1122,7 +1079,7 @@ protected:
             }
 
             // Append to the array
-            ret->push_back(std::move(val));
+            ret.push_back(std::move(val));
 
             // Next token must be ',' or ']'
             const auto token = next_token(p_ctx);
@@ -1166,7 +1123,7 @@ protected:
 
 private:
 
-    value       _value{};
+    value       _value;
 };
 
 class json_category_impl : public std::error_category

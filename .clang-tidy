@@ -4,17 +4,18 @@
 Checks: >
   -*,
   bugprone-*,
+   -bugprone-easily-swappable-parameters,
   misc-*,
+   -misc-non-private-member-variables-in-classes,
+   -misc-no-recursion,
   modernize-*,
+   -modernize-use-trailing-return-type,
   performance-*,
   portability-*,
   readability-*,
-  -misc-non-private-member-variables-in-classes,
+  -readability-braces-around-statements,
+  -readability-magic-numbers,
   -readability-convert-member-functions-to-static,
-  -readability-identifier-length,
-  -misc-no-recursion,
-  -bugprone-easily-swappable-parameters
-#  Only because test code has lots of magic numbers
-  -readability-magic-numbers
+  -readability-identifier-length
 
 HeaderFilterRegex: inc/turner/.*\.h
