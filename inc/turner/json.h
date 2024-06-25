@@ -704,8 +704,6 @@ public:
         value(const value& other)            = default;
         value& operator=(const value& other) = default;
 
-    private:
-
         // I'd use a concept here, but we can't forward declare an inner class
         // and I'd like to keep everything tucked into the class.
         template <typename T>
