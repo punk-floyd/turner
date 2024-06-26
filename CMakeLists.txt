@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.18)
 project(turner
     VERSION         "1.0"
     DESCRIPTION     "C++20 JSON library"
-    HOMEPAGE_URL    "https://https://github.com/punk-floyd/json-turner"
+    HOMEPAGE_URL    "https://github.com/punk-floyd/json-turner"
     LANGUAGES       CXX
 )
 

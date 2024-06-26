@@ -249,7 +249,7 @@ public:
         {}
 
         /// This object implicitly converts to bool: true means we're error free
-        constexpr operator bool() const noexcept { return err == json_error{}; }
+        constexpr explicit operator bool() const noexcept { return err == json_error{}; }
 
         InputIt     it{};   ///< End of decoded data or error location
         json_error  err{};  ///< Offending error code, or 0
@@ -437,7 +437,7 @@ public:
             {}
 
             /// This object implicitly converts to bool: true means we're error free
-            constexpr operator bool() const noexcept { return err == json_error{}; }
+            constexpr explicit operator bool() const noexcept { return err == json_error{}; }
 
             OutputIt    it{};   ///< End of encoded data
             json_error  err{};  ///< Offending error code, or 0
