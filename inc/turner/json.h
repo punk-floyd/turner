@@ -8,6 +8,24 @@
  *
  * @copyright Copyright (c) 2023 Mike DeKoker
  *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
  */
 #ifndef zzz_I_assure_you_that_json_dot_h_has_been_included
 #define zzz_I_assure_you_that_json_dot_h_has_been_included
@@ -20,6 +38,7 @@
 #include <concepts>
 #include <optional>
 #include <iterator>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <variant>
@@ -31,6 +50,9 @@
 #include <cmath>
 #include <array>
 #include <map>
+
+// A local C++20 implementation of C++23 std::expected
+#include "expected.h"
 
 namespace turner {
 
@@ -185,7 +207,7 @@ namespace imp {
     // -- Printer wrapper --------------------------------------------------
 
     template <class T>          struct print_wrap    { T& printer; };
-    template <indent_spec T>    struct print_wrap<T> { T& printer; size_t indent{}; };
+    template <indent_spec T>    struct print_wrap<T> { T& printer; std::size_t indent{}; };
 
 }   // namespace imp
 
@@ -210,7 +232,7 @@ public:
     // -- Construction
 
     /// Constructs a default object with no JSON data
-    constexpr json() noexcept = default;
+    json() noexcept = default;
 
     /// Construct with JSON data decoded from the given range
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
@@ -294,7 +316,7 @@ public:
      * @return Returns a decode_result containing results; @see decode_result
      */
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    constexpr auto decode(InputIt first, Stop last,
+    auto decode(InputIt first, Stop last,
         decode_policy policy = decode_policy{})
         -> decode_result<InputIt>
     {
@@ -310,13 +332,13 @@ public:
 
     /// Parse JSON data in the given range
     template <std::ranges::input_range R>
-    constexpr auto decode(R&& r, decode_policy policy = decode_policy{})
+    auto decode(R&& r, decode_policy policy = decode_policy{})
     {
         return decode(begin(r), end(r), policy);
     }
 
     /// Parse from a C string
-    constexpr auto decode(const char* src, decode_policy policy = decode_policy{})
+    auto decode(const char* src, decode_policy policy = decode_policy{})
     {
         return decode(std::string_view(src), policy);
     }
@@ -332,19 +354,143 @@ public:
     // -- Attributes
 
     class value;
-
-    /// Access root value
-    [[nodiscard]] constexpr       value&  get_value()       &  noexcept { return _value; }
-    [[nodiscard]] constexpr const value&  get_value() const &  noexcept { return _value; }
-    [[nodiscard]] constexpr       value&& get_value()       && noexcept { return std::move(_value); }
+    template <class MapType> class MapWrap;
 
     // -- JSON value types
 
-    using object = std::map<std::string, value, std::less<>>;
+    using object = MapWrap<std::map<std::string, value, std::less<>>>;
     using array  = std::vector<value>;
     using string = std::string;
     using number = double;
-    using integer = int64_t;
+    using integer = std::int64_t;       // Non-standard
+
+    // A JSON object is a map, but with a few convenience methods added
+    template <class MapType = std::map<std::string, value, std::less<>>>
+    class MapWrap : public MapType
+    {
+    public:
+
+        /// Construct from anything that the map can
+        template<class... Args>
+            requires (std::is_constructible_v<MapType, Args...>)
+        MapWrap(Args&&... args)
+            : MapType(std::forward<Args>(args)...)
+        {}
+
+        // Bring in map's operators
+        using MapType::operator=;
+        using MapType::operator[];
+
+        // We need to defer on the implementation for these since value isn't fully defined yet
+        template <class T>
+        friend auto operator<=>(const MapWrap<T>&, const MapWrap<T>&);
+        template <class T>
+        friend bool operator==(const json::MapWrap<T>&, const json::MapWrap<T>&);
+
+        // -- Named member lookup
+
+        /**
+         * @brief Obtain an expected string value of the named member
+         *
+         * @param name              The member name of the value to look up
+         * @param default_value     The default value to use if the named
+         *  item does not exist in our map. If this value is std::nullopt
+         *  and the named item does not exist then an unexpected will be
+         *  returned describing the error.
+         *
+         * @retval expected     A copy of the string value associated with
+         *  the named member.
+         * @retval unexpected   A string describing the error, which will be
+         *  one of the following: the named member does not exist in the map
+         *  and no default value was provided. Or, the named member exists
+         *  in the map, but it is not a string type.
+         */
+        [[nodiscard]] auto get_member_string(std::string_view name,
+            std::optional<std::string> default_value = std::nullopt)
+                -> turner::expected<std::string, std::string>
+        {
+            return get_member_imp(name, std::move(default_value), "string");
+        }
+
+        // Obtain the expected number value of the named member
+        [[nodiscard]] auto get_member_number(std::string_view name,
+            std::optional<number> default_value = std::nullopt)
+                -> turner::expected<number, std::string>
+        {
+            return get_member_imp(name, default_value, "number");
+        }
+
+        // Obtain the expected integer value of the named member
+        [[nodiscard]] auto get_member_integer(std::string_view name,
+            std::optional<integer> default_value = std::nullopt)
+                -> turner::expected<integer, std::string>
+        {
+            return get_member_imp(name, default_value, "integer");
+        }
+
+        // Obtain the expected Boolean value of the named member
+        [[nodiscard]] auto get_member_bool(std::string_view name,
+            std::optional<bool> default_value = std::nullopt)
+                -> turner::expected<bool, std::string>
+        {
+            return get_member_imp(name, default_value, "Boolean");
+        }
+
+        // Obtain the expected null value of the named member
+        [[nodiscard]] auto get_member_null(std::string_view name,
+            std::optional<nullptr_t> default_value = std::nullopt)
+                -> turner::expected<nullptr_t, std::string>
+        {
+            // Including this one only for consistency
+            return get_member_imp(name, default_value, "null");
+        }
+
+        // Obtain the expected object value of the named member
+        [[nodiscard]] auto get_member_object(std::string_view name,
+            std::optional<object> default_value = std::nullopt)
+                -> turner::expected<object, std::string>
+        {
+            // Note this returns a *copy* of the object
+            return get_member_imp(name, std::move(default_value), "object");
+        }
+
+        // Obtain the expected array value of the named member
+        [[nodiscard]] auto get_member_array(std::string_view name,
+            std::optional<array> default_value = std::nullopt)
+                -> turner::expected<array, std::string>
+        {
+            // Note this returns a *copy* of the array
+            return get_member_imp(name, std::move(default_value), "array");
+        }
+
+    private:
+
+        template <class T>
+        [[nodiscard]] auto get_member_imp(std::string_view name,
+            std::optional<T> default_value, std::string_view type_name) const
+                -> turner::expected<T, std::string>
+        {
+            // Look up the named member in out map
+            const auto it = MapType::find(name);
+            if ((it == MapType::cend()) && default_value)
+                return default_value.value();   // Not in map, use default value
+            if ((it == MapType::cend()) || (!it->second.template is<T>())) {
+                // Named member is not in map, or is not of the expected type
+                std::string msg{"Missing required "};
+                msg.append(type_name);
+                msg.append(" member: ");
+                msg.append(name);
+                return turner::unexpected{std::move(msg)};
+            }
+
+            return it->second.template get<T>();
+        }
+    };
+
+    /// Access root value
+    [[nodiscard]]       value&  get_value()       &  noexcept { return _value; }
+    [[nodiscard]] const value&  get_value() const &  noexcept { return _value; }
+    [[nodiscard]]       value&& get_value()       && noexcept { return std::move(_value); }
 
     using value_variant = std::variant <
         nullptr_t,      // null
@@ -364,61 +510,61 @@ public:
         // -- Construction
 
         // Default construction is a JSON null
-        constexpr value() noexcept = default;
+        value() noexcept = default;
 
         // Construct from a value (pass through)
         template <class Arg>
             requires (!std::is_same_v<std::remove_cvref_t<Arg>, value> && std::is_constructible_v<value_variant, Arg>)
-        constexpr value(Arg&& arg) noexcept(std::is_nothrow_constructible_v<value_variant, Arg>)
+        value(Arg&& arg) noexcept(std::is_nothrow_constructible_v<value_variant, Arg>)
             : value_variant(std::forward<Arg>(arg))
         {}
 
         // -- Observers
 
         [[nodiscard]] constexpr bool is_object() const noexcept { return is<object>(); }
-        [[nodiscard]] constexpr       object&  get_object()       &           { return get<object>(); }
-        [[nodiscard]] constexpr const object&  get_object() const &           { return get<object>(); }
-        [[nodiscard]] constexpr       object&& get_object()       &&          { return std::move(get<object>()); }
-        [[nodiscard]] constexpr       object*  get_object_if()       noexcept { return try_get<object>(); }
-        [[nodiscard]] constexpr const object*  get_object_if() const noexcept { return try_get<object>(); }
+        [[nodiscard]]       object&  get_object()       &           { return get<object>(); }
+        [[nodiscard]] const object&  get_object() const &           { return get<object>(); }
+        [[nodiscard]]       object&& get_object()       &&          { return std::move(get<object>()); }
+        [[nodiscard]]       object*  get_object_if()       noexcept { return try_get<object>(); }
+        [[nodiscard]] const object*  get_object_if() const noexcept { return try_get<object>(); }
 
         [[nodiscard]] constexpr bool is_array()  const noexcept { return is<array>(); }
-        [[nodiscard]] constexpr       array&   get_array()       &            { return get<array>(); }
-        [[nodiscard]] constexpr const array&   get_array() const &            { return get<array>(); }
-        [[nodiscard]] constexpr       array&&  get_array()       &&           { return std::move(get<array>()); }
-        [[nodiscard]] constexpr       array*   get_array_if()       noexcept  { return try_get<array>(); }
-        [[nodiscard]] constexpr const array*   get_array_if() const noexcept  { return try_get<array>(); }
+        [[nodiscard]]       array&   get_array()       &            { return get<array>(); }
+        [[nodiscard]] const array&   get_array() const &            { return get<array>(); }
+        [[nodiscard]]       array&&  get_array()       &&           { return std::move(get<array>()); }
+        [[nodiscard]]       array*   get_array_if()       noexcept  { return try_get<array>(); }
+        [[nodiscard]] const array*   get_array_if() const noexcept  { return try_get<array>(); }
 
         [[nodiscard]] constexpr bool is_string() const noexcept { return is<string>(); }
-        [[nodiscard]] constexpr       string&      get_string()       &            { return get<string>(); }
-        [[nodiscard]] constexpr const string&      get_string() const &            { return get<string>(); }
-        [[nodiscard]] constexpr       string&&     get_string()      &&            { return std::move(get<string>()); }
-        [[nodiscard]] constexpr       string*      get_string_if()       noexcept  { return try_get<string>(); }
-        [[nodiscard]] constexpr const string*      get_string_if() const noexcept  { return try_get<string>(); }
+        [[nodiscard]]       string&      get_string()       &            { return get<string>(); }
+        [[nodiscard]] const string&      get_string() const &            { return get<string>(); }
+        [[nodiscard]]       string&&     get_string()      &&            { return std::move(get<string>()); }
+        [[nodiscard]]       string*      get_string_if()       noexcept  { return try_get<string>(); }
+        [[nodiscard]] const string*      get_string_if() const noexcept  { return try_get<string>(); }
 
         [[nodiscard]] constexpr bool is_number() const noexcept { return is<number>(); }
-        [[nodiscard]] constexpr       number&      get_number()                    { return get<number>(); }
-        [[nodiscard]] constexpr const number&      get_number() const              { return get<number>(); }
-        [[nodiscard]] constexpr       number*      get_number_if()       noexcept  { return try_get<number>(); }
-        [[nodiscard]] constexpr const number*      get_number_if() const noexcept  { return try_get<number>(); }
+        [[nodiscard]]       number&      get_number()                    { return get<number>(); }
+        [[nodiscard]] const number&      get_number() const              { return get<number>(); }
+        [[nodiscard]]       number*      get_number_if()       noexcept  { return try_get<number>(); }
+        [[nodiscard]] const number*      get_number_if() const noexcept  { return try_get<number>(); }
 
         [[nodiscard]] constexpr bool is_integer() const noexcept { return is<integer>(); }
-        [[nodiscard]] constexpr       integer&     get_integer()                   { return get<integer>(); }
-        [[nodiscard]] constexpr const integer&     get_integer() const             { return get<integer>(); }
-        [[nodiscard]] constexpr       integer*     get_integer_if()       noexcept { return try_get<integer>(); }
-        [[nodiscard]] constexpr const integer*     get_integer_if() const noexcept { return try_get<integer>(); }
+        [[nodiscard]]       integer&     get_integer()                   { return get<integer>(); }
+        [[nodiscard]] const integer&     get_integer() const             { return get<integer>(); }
+        [[nodiscard]]       integer*     get_integer_if()       noexcept { return try_get<integer>(); }
+        [[nodiscard]] const integer*     get_integer_if() const noexcept { return try_get<integer>(); }
 
         [[nodiscard]] constexpr bool is_bool()   const noexcept { return is<bool>();  }
-        [[nodiscard]] constexpr       bool&        get_bool()                      { return get<bool>(); }
-        [[nodiscard]] constexpr const bool&        get_bool() const                { return get<bool>(); }
-        [[nodiscard]] constexpr       bool*        get_bool_if()       noexcept    { return try_get<bool>(); }
-        [[nodiscard]] constexpr const bool*        get_bool_if() const noexcept    { return try_get<bool>(); }
+        [[nodiscard]]       bool&        get_bool()                      { return get<bool>(); }
+        [[nodiscard]] const bool&        get_bool() const                { return get<bool>(); }
+        [[nodiscard]]       bool*        get_bool_if()       noexcept    { return try_get<bool>(); }
+        [[nodiscard]] const bool*        get_bool_if() const noexcept    { return try_get<bool>(); }
 
         [[nodiscard]] constexpr bool is_null()   const noexcept { return is<nullptr_t>(); }
-        [[nodiscard]] constexpr       nullptr_t&   get_null()                      { return get<nullptr_t>(); }
-        [[nodiscard]] constexpr const nullptr_t&   get_null() const                { return get<nullptr_t>(); }
-        [[nodiscard]] constexpr       nullptr_t*   get_null_if()       noexcept    { return try_get<nullptr_t>(); }
-        [[nodiscard]] constexpr const nullptr_t*   get_null_if() const noexcept    { return try_get<nullptr_t>(); }
+        [[nodiscard]]       nullptr_t&   get_null()                      { return get<nullptr_t>(); }
+        [[nodiscard]] const nullptr_t&   get_null() const                { return get<nullptr_t>(); }
+        [[nodiscard]]       nullptr_t*   get_null_if()       noexcept    { return try_get<nullptr_t>(); }
+        [[nodiscard]] const nullptr_t*   get_null_if() const noexcept    { return try_get<nullptr_t>(); }
 
         template <typename T>
         [[nodiscard]] constexpr bool is() const noexcept
@@ -840,7 +986,7 @@ protected:
 
         // Read in four hex digits
         uint16_t hex_val{};
-        for (size_t i = 0; (it != p_ctx.it_end) && (i < 4); ++it,++i) {
+        for (std::size_t i = 0; (it != p_ctx.it_end) && (i < 4); ++it,++i) {
             auto dig_val = hex_char_value(*it);
             if (!dig_val.has_value()) {
                 p_ctx.err = json_error::invalid_hex_char;
@@ -1018,10 +1164,10 @@ protected:
 
             // Handle non-unique member name; e.g.: { "foo" : 1, "foo" : 2 }
             if (ret.contains(name)) {
-                const auto dispo = p_ctx.policy.non_unique_member_name_disposition;
-                if (dispo == decode_policy::NonUniqueDisposition::Throw)
+                const auto disposition = p_ctx.policy.non_unique_member_name_disposition;
+                if (disposition == decode_policy::NonUniqueDisposition::Throw)
                     throw std::system_error(make_error_code(json_error::nonunique_member_name));
-                if (dispo == decode_policy::NonUniqueDisposition::Fail) {
+                if (disposition == decode_policy::NonUniqueDisposition::Fail) {
                     p_ctx.err = json_error::nonunique_member_name;
                     break;
                 }
@@ -1123,6 +1269,23 @@ private:
 
     value       _value;
 };
+
+template <class T>
+auto operator<=>(const json::MapWrap<T>& lhs, const json::MapWrap<T>& rhs)
+    -> std::compare_three_way_result_t<typename json::MapWrap<T>::MapType>
+{
+    return
+        static_cast<const json::MapWrap<T>::MapType&>(lhs) <=>
+        static_cast<const json::MapWrap<T>::MapType&>(rhs);
+}
+
+template <class T>
+bool operator==(const json::MapWrap<T>& lhs, const json::MapWrap<T>& rhs)
+{
+    return
+        static_cast<const json::MapWrap<T>::MapType&>(lhs) ==
+        static_cast<const json::MapWrap<T>::MapType&>(rhs);
+}
 
 class json_category_impl : public std::error_category
 {
