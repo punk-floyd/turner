@@ -498,38 +498,39 @@ TEST_CASE ("JSON object member lookup") {
     obj.emplace(std::make_pair("f", json::make_array()));
     obj.emplace(std::make_pair("g", json::object{}));
     obj.emplace(std::make_pair("h", integer_value));
+    const json::value v{std::move(obj)};
 
     // Check lookups that should be there
-    REQUIRE(obj.get_member_string("a"));
-    REQUIRE(obj.get_member_string("a").value() == str_value);
-    REQUIRE(obj.get_member_number("b"));
-    REQUIRE_THAT(obj.get_member_number("b").value(), WithinRel(number_value, eps));
-    REQUIRE(obj.get_member_null("c"));
-    REQUIRE(obj.get_member_null("c").value() == nullptr);
-    REQUIRE(obj.get_member_bool("d"));
-    REQUIRE(obj.get_member_bool("d").value() == true);
-    REQUIRE(obj.get_member_bool("e"));
-    REQUIRE(obj.get_member_bool("e").value() == false);
-    REQUIRE(obj.get_member_array("f"));
-    REQUIRE(obj.get_member_object("g"));
-    REQUIRE(obj.get_member_integer("h"));
-    REQUIRE(obj.get_member_integer("h").value() == integer_value);
+    REQUIRE(v.get_member_string("a"));
+    REQUIRE(v.get_member_string("a").value() == str_value);
+    REQUIRE(v.get_member_number("b"));
+    REQUIRE_THAT(v.get_member_number("b").value(), WithinRel(number_value, eps));
+    REQUIRE(v.get_member_null("c"));
+    REQUIRE(v.get_member_null("c").value() == nullptr);
+    REQUIRE(v.get_member_bool("d"));
+    REQUIRE(v.get_member_bool("d").value() == true);
+    REQUIRE(v.get_member_bool("e"));
+    REQUIRE(v.get_member_bool("e").value() == false);
+    REQUIRE(v.get_member_array("f"));
+    REQUIRE(v.get_member_object("g"));
+    REQUIRE(v.get_member_integer("h"));
+    REQUIRE(v.get_member_integer("h").value() == integer_value);
 
     // Check bad lookups with default returns
-    REQUIRE(obj.get_member_string("No", "default").value() == "default");
-    REQUIRE_THAT(obj.get_member_number("Non", 3.14159).value(), WithinRel(3.14159, eps));
-    REQUIRE(obj.get_member_null("Nee", nullptr).value() == nullptr);
-    REQUIRE(obj.get_member_bool("いいえ", true).value() == true);
-    REQUIRE(obj.get_member_array("不", json::array{}).has_value());
-    REQUIRE(obj.get_member_object("Нет", json::object{}).has_value());
-    REQUIRE(obj.get_member_integer("E", 1234).value() == 1234);
+    REQUIRE(v.get_member_string("No", "default").value() == "default");
+    REQUIRE_THAT(v.get_member_number("Non", 3.14159).value(), WithinRel(3.14159, eps));
+    REQUIRE(v.get_member_null("Nee", nullptr).value() == nullptr);
+    REQUIRE(v.get_member_bool("いいえ", true).value() == true);
+    REQUIRE(v.get_member_array("不", json::array{}).has_value());
+    REQUIRE(v.get_member_object("Нет", json::object{}).has_value());
+    REQUIRE(v.get_member_integer("E", 1234).value() == 1234);
 
     // Check bad lookup with no default
-    REQUIRE_FALSE(obj.get_member_string("Não"));
-    REQUIRE_FALSE(obj.get_member_number("아니요"));
-    REQUIRE_FALSE(obj.get_member_null("لا"));
-    REQUIRE_FALSE(obj.get_member_bool("Nej"));
-    REQUIRE_FALSE(obj.get_member_array(" Όχι"));
-    REQUIRE_FALSE(obj.get_member_object("नहीं"));
-    REQUIRE_FALSE(obj.get_member_integer("Hayır"));
+    REQUIRE_FALSE(v.get_member_string("Não"));
+    REQUIRE_FALSE(v.get_member_number("아니요"));
+    REQUIRE_FALSE(v.get_member_null("لا"));
+    REQUIRE_FALSE(v.get_member_bool("Nej"));
+    REQUIRE_FALSE(v.get_member_array(" Όχι"));
+    REQUIRE_FALSE(v.get_member_object("नहीं"));
+    REQUIRE_FALSE(v.get_member_integer("Hayır"));
 }

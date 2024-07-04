@@ -354,147 +354,20 @@ public:
     // -- Attributes
 
     class value;
-    template <class MapType> class MapWrap;
 
     // -- JSON value types
 
-    using object = MapWrap<std::map<std::string, value, std::less<>>>;
+    using object = std::map<std::string, value, std::less<>>;
     using array  = std::vector<value>;
     using string = std::string;
     using number = double;
     using integer = std::int64_t;       // Non-standard
 
-    // A JSON object is a map, but with a few convenience methods added
-    template <class MapType = std::map<std::string, value, std::less<>>>
-    class MapWrap : public MapType
-    {
-    public:
-
-        // Need this to defer instantiation of get_member_object
-        using object = MapType;
-
-        /// Construct from anything that the map can
-        template<class... Args>
-            requires (std::is_constructible_v<MapType, Args...>)
-        MapWrap(Args&&... args)
-            : MapType(std::forward<Args>(args)...)
-        {}
-
-        // Bring in map's operators
-        using MapType::operator=;
-        using MapType::operator[];
-
-        // We need to defer on the implementation for these since value isn't fully defined yet
-        template <class T>
-        friend auto operator<=>(const MapWrap<T>&, const MapWrap<T>&);
-        template <class T>
-        friend bool operator==(const json::MapWrap<T>&, const json::MapWrap<T>&);
-
-        // -- Named member lookup
-
-        /**
-         * @brief Obtain an expected string value of the named member
-         *
-         * @param name              The member name of the value to look up
-         * @param default_value     The default value to use if the named
-         *  item does not exist in our map. If this value is std::nullopt
-         *  and the named item does not exist then an unexpected will be
-         *  returned describing the error.
-         *
-         * @retval expected     A copy of the string value associated with
-         *  the named member.
-         * @retval unexpected   A string describing the error, which will be
-         *  one of the following: the named member does not exist in the map
-         *  and no default value was provided. Or, the named member exists
-         *  in the map, but it is not a string type.
-         */
-        [[nodiscard]] auto get_member_string(std::string_view name,
-            std::optional<std::string> default_value = std::nullopt)
-                -> turner::expected<std::string, std::string>
-        {
-            return get_member_imp(name, std::move(default_value), "string");
-        }
-
-        // Obtain the expected number value of the named member
-        [[nodiscard]] auto get_member_number(std::string_view name,
-            std::optional<number> default_value = std::nullopt)
-                -> turner::expected<number, std::string>
-        {
-            return get_member_imp(name, default_value, "number");
-        }
-
-        // Obtain the expected integer value of the named member
-        [[nodiscard]] auto get_member_integer(std::string_view name,
-            std::optional<integer> default_value = std::nullopt)
-                -> turner::expected<integer, std::string>
-        {
-            return get_member_imp(name, default_value, "integer");
-        }
-
-        // Obtain the expected Boolean value of the named member
-        [[nodiscard]] auto get_member_bool(std::string_view name,
-            std::optional<bool> default_value = std::nullopt)
-                -> turner::expected<bool, std::string>
-        {
-            return get_member_imp(name, default_value, "Boolean");
-        }
-
-        // Obtain the expected null value of the named member
-        [[nodiscard]] auto get_member_null(std::string_view name,
-            std::optional<nullptr_t> default_value = std::nullopt)
-                -> turner::expected<nullptr_t, std::string>
-        {
-            // Including this one only for consistency
-            return get_member_imp(name, default_value, "null");
-        }
-
-        // Obtain the expected object value of the named member
-        [[nodiscard]] auto get_member_object(std::string_view name,
-            std::optional<object> default_value = std::nullopt)
-                -> turner::expected<object, std::string>
-        {
-            // Note this returns a *copy* of the object
-            return get_member_imp(name, std::move(default_value), "object");
-        }
-
-        // Obtain the expected array value of the named member
-        [[nodiscard]] auto get_member_array(std::string_view name,
-            std::optional<array> default_value = std::nullopt)
-                -> turner::expected<array, std::string>
-        {
-            // Note this returns a *copy* of the array
-            return get_member_imp(name, std::move(default_value), "array");
-        }
-
-    private:
-
-        template <class T>
-        [[nodiscard]] auto get_member_imp(std::string_view name,
-            std::optional<T> default_value, std::string_view type_name) const
-                -> turner::expected<T, std::string>
-        {
-            // Look up the named member in out map
-            const auto it = MapType::find(name);
-            if ((it == MapType::cend()) && default_value)
-                return default_value.value();   // Not in map, use default value
-            if ((it == MapType::cend()) || (!it->second.template is<T>())) {
-                // Named member is not in map, or is not of the expected type
-                std::string msg{"Missing required "};
-                msg.append(type_name);
-                msg.append(" member: ");
-                msg.append(name);
-                return turner::unexpected{std::move(msg)};
-            }
-
-            return it->second.template get<T>();
-        }
-    };
-
     /// Access root value
     [[nodiscard]]       value&  get_value()       &  noexcept { return _value; }
     [[nodiscard]] const value&  get_value() const &  noexcept { return _value; }
     [[nodiscard]]       value&& get_value()       && noexcept { return std::move(_value); }
-    [[nodiscard]] const value&& get_value() const && noexcept { return std::move(_value); }
+    [[nodiscard]] const value&& get_value() const && noexcept { return std::move(_value); } // NOLINT(performance-move-const-arg)
 
     using value_variant = std::variant <
         nullptr_t,      // null
@@ -526,18 +399,18 @@ public:
         // -- Observers
 
         [[nodiscard]] constexpr bool is_object() const noexcept { return is<object>(); }
-        [[nodiscard]]       object&  get_object()       &           { return get<object>(); }
-        [[nodiscard]] const object&  get_object() const &           { return get<object>(); }
-        [[nodiscard]]       object&& get_object()       &&          { return std::move(get<object>()); }
-        [[nodiscard]]       object*  get_object_if()       noexcept { return try_get<object>(); }
-        [[nodiscard]] const object*  get_object_if() const noexcept { return try_get<object>(); }
+        [[nodiscard]]       object&      get_object()       &           { return get<object>(); }
+        [[nodiscard]] const object&      get_object() const &           { return get<object>(); }
+        [[nodiscard]]       object&&     get_object()       &&          { return std::move(get<object>()); }
+        [[nodiscard]]       object*      get_object_if()       noexcept { return try_get<object>(); }
+        [[nodiscard]] const object*      get_object_if() const noexcept { return try_get<object>(); }
 
-        [[nodiscard]] constexpr bool is_array()  const noexcept { return is<array>(); }
-        [[nodiscard]]       array&   get_array()       &            { return get<array>(); }
-        [[nodiscard]] const array&   get_array() const &            { return get<array>(); }
-        [[nodiscard]]       array&&  get_array()       &&           { return std::move(get<array>()); }
-        [[nodiscard]]       array*   get_array_if()       noexcept  { return try_get<array>(); }
-        [[nodiscard]] const array*   get_array_if() const noexcept  { return try_get<array>(); }
+        [[nodiscard]] constexpr bool     is_array()  const noexcept { return is<array>(); }
+        [[nodiscard]]       array&       get_array()       &            { return get<array>(); }
+        [[nodiscard]] const array&       get_array() const &            { return get<array>(); }
+        [[nodiscard]]       array&&      get_array()       &&           { return std::move(get<array>()); }
+        [[nodiscard]]       array*       get_array_if()       noexcept  { return try_get<array>(); }
+        [[nodiscard]] const array*       get_array_if() const noexcept  { return try_get<array>(); }
 
         [[nodiscard]] constexpr bool is_string() const noexcept { return is<string>(); }
         [[nodiscard]]       string&      get_string()       &            { return get<string>(); }
@@ -569,6 +442,213 @@ public:
         [[nodiscard]] const nullptr_t&   get_null() const                { return get<nullptr_t>(); }
         [[nodiscard]]       nullptr_t*   get_null_if()       noexcept    { return try_get<nullptr_t>(); }
         [[nodiscard]] const nullptr_t*   get_null_if() const noexcept    { return try_get<nullptr_t>(); }
+
+        // -- Accessor helpers for JSON objects
+
+        /**
+         * @brief Obtain the string value associated with given member name
+         *
+         * @param name              The member name of the value to look up
+         * @param default_value     The default value to use if the named
+         *  item does not exist in our map. If this value is std::nullopt
+         *  and the named item does not exist then an unexpected will be
+         *  returned describing the error.
+         *
+         * @retval expected     A copy of the string value associated with
+         *  the named member.
+         * @retval unexpected   A string describing the error, which will be
+         *  one of the following: this value is not a JSON object, the named
+         *  member does not exist in the map and no default value was
+         *  provided, or the named member exists in the map, but it is not a
+         *  string type.
+         */
+        [[nodiscard]] auto get_member_string(std::string_view name,
+            std::optional<std::string> default_value = std::nullopt) const
+                -> turner::expected<std::string, std::string>
+        {
+            return get_member_imp(name, std::move(default_value), "string");
+        }
+
+        /**
+         * @brief Obtain the number value associated with given member name
+         *
+         * @param name              The member name of the value to look up
+         * @param default_value     The default value to use if the named
+         *  item does not exist in our map. If this value is std::nullopt
+         *  and the named item does not exist then an unexpected will be
+         *  returned describing the error.
+         *
+         * @retval expected     A copy of the number value associated with
+         *  the named member.
+         * @retval unexpected   A string describing the error, which will be
+         *  one of the following: this value is not a JSON object, the named
+         *  member does not exist in the map and no default value was
+         *  provided, or the named member exists in the map, but it is not a
+         *  number type.
+         */
+        [[nodiscard]] auto get_member_number(std::string_view name,
+            std::optional<number> default_value = std::nullopt) const
+                -> turner::expected<number, std::string>
+        {
+            return get_member_imp(name, default_value, "number");
+        }
+
+        /**
+         * @brief Obtain the integer value associated with given member name
+         *
+         * @param name              The member name of the value to look up
+         * @param default_value     The default value to use if the named
+         *  item does not exist in our map. If this value is std::nullopt
+         *  and the named item does not exist then an unexpected will be
+         *  returned describing the error.
+         *
+         * @retval expected     A copy of the integer value associated with
+         *  the named member.
+         * @retval unexpected   A string describing the error, which will be
+         *  one of the following: this value is not a JSON object, the named
+         *  member does not exist in the map and no default value was
+         *  provided, or the named member exists in the map, but it is not
+         *  an integer type.
+         */
+        [[nodiscard]] auto get_member_integer(std::string_view name,
+            std::optional<integer> default_value = std::nullopt) const
+                -> turner::expected<integer, std::string>
+        {
+            return get_member_imp(name, default_value, "integer");
+        }
+
+        /**
+         * @brief Obtain the Boolean value associated with given member name
+         *
+         * @param name              The member name of the value to look up
+         * @param default_value     The default value to use if the named
+         *  item does not exist in our map. If this value is std::nullopt
+         *  and the named item does not exist then an unexpected will be
+         *  returned describing the error.
+         *
+         * @retval expected     A copy of the Boolean value associated with
+         *  the named member.
+         * @retval unexpected   A string describing the error, which will be
+         *  one of the following: this value is not a JSON object, the named
+         *  member does not exist in the map and no default value was
+         *  provided, or the named member exists in the map, but it is not a
+         *  Boolean type.
+         */
+        [[nodiscard]] auto get_member_bool(std::string_view name,
+            std::optional<bool> default_value = std::nullopt) const
+                -> turner::expected<bool, std::string>
+        {
+            return get_member_imp(name, default_value, "Boolean");
+        }
+
+        /**
+         * @brief Obtain the null value associated with given member name
+         *
+         * This is not a very interesting method. It exists solely to be
+         * consistent with the other types.
+         *
+         * @param name              The member name of the value to look up
+         * @param default_value     The default value to use if the named
+         *  item does not exist in our map. If this value is std::nullopt
+         *  and the named item does not exist then an unexpected will be
+         *  returned describing the error.
+         *
+         * @retval expected     A copy of the null value associated with
+         *  the named member.
+         * @retval unexpected   A string describing the error, which will be
+         *  one of the following: this value is not a JSON object, the named
+         *  member does not exist in the map and no default value was
+         *  provided, or the named member exists in the map, but it is not a
+         *  null type.
+         */
+        [[nodiscard]] auto get_member_null(std::string_view name,
+            std::optional<nullptr_t> default_value = std::nullopt) const
+                -> turner::expected<nullptr_t, std::string>
+        {
+            // Including this one only for consistency
+            return get_member_imp(name, default_value, "null");
+        }
+
+        /**
+         * @brief Obtain the object value associated with given member name
+         *
+         * @param name              The member name of the value to look up
+         * @param default_value     The default value to use if the named
+         *  item does not exist in our map. If this value is std::nullopt
+         *  and the named item does not exist then an unexpected will be
+         *  returned describing the error.
+         *
+         * @retval expected     A copy of the object value associated with
+         *  the named member.
+         * @retval unexpected   A string describing the error, which will be
+         *  one of the following: this value is not a JSON object, the named
+         *  member does not exist in the map and no default value was
+         *  provided, or the named member exists in the map, but it is not
+         *  an object type.
+         */
+        [[nodiscard]] auto get_member_object(std::string_view name,
+            std::optional<object> default_value = std::nullopt) const
+                -> turner::expected<object, std::string>
+        {
+            // Note this returns a *copy* of the object
+            return get_member_imp(name, std::move(default_value), "object");
+        }
+
+        /**
+         * @brief Obtain the array value associated with given member name
+         *
+         * @param name              The member name of the value to look up
+         * @param default_value     The default value to use if the named
+         *  item does not exist in our map. If this value is std::nullopt
+         *  and the named item does not exist then an unexpected will be
+         *  returned describing the error.
+         *
+         * @retval expected     A copy of the array value associated with
+         *  the named member.
+         * @retval unexpected   A string describing the error, which will be
+         *  one of the following: this value is not a JSON object, the named
+         *  member does not exist in the map and no default value was
+         *  provided, or the named member exists in the map, but it is not
+         *  an array type.
+         */
+        [[nodiscard]] auto get_member_array(std::string_view name,
+            std::optional<array> default_value = std::nullopt) const
+                -> turner::expected<array, std::string>
+        {
+            // Note this returns a *copy* of the array
+            return get_member_imp(name, std::move(default_value), "array");
+        }
+
+private:
+
+        template <class T>
+        [[nodiscard]] auto get_member_imp(std::string_view name,
+            std::optional<T> default_value, std::string_view type_name) const
+                -> turner::expected<T, std::string>
+        {
+            // This method only applies to JSON objects
+            const auto* obj = get_object_if();
+            if (nullptr == obj)
+                return turner::unexpected{"Value is not an object"};
+
+            // Look up the named member in out map
+            const auto it = obj->find(name);
+            if ((it == obj->cend()) && default_value)
+                return default_value.value();   // Not in map, use default value
+
+            if ((it == obj->cend()) || (!it->second.is<T>())) {
+                // Named member is not in map, or is not of the expected type
+                std::string msg{"Missing required "};
+                msg.append(type_name);
+                msg.append(" member: ");
+                msg.append(name);
+                return turner::unexpected{std::move(msg)};
+            }
+
+            return it->second.get<T>();
+        }
+
+public:
 
         template <typename T>
         [[nodiscard]] constexpr bool is() const noexcept
@@ -1273,23 +1353,6 @@ private:
 
     value       _value;
 };
-
-template <class T>
-auto operator<=>(const json::MapWrap<T>& lhs, const json::MapWrap<T>& rhs)
-    -> std::compare_three_way_result_t<typename json::MapWrap<T>::MapType>
-{
-    return
-        static_cast<const json::MapWrap<T>::MapType&>(lhs) <=>
-        static_cast<const json::MapWrap<T>::MapType&>(rhs);
-}
-
-template <class T>
-bool operator==(const json::MapWrap<T>& lhs, const json::MapWrap<T>& rhs)
-{
-    return
-        static_cast<const json::MapWrap<T>::MapType&>(lhs) ==
-        static_cast<const json::MapWrap<T>::MapType&>(rhs);
-}
 
 class json_category_impl : public std::error_category
 {
