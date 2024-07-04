@@ -370,6 +370,9 @@ public:
     {
     public:
 
+        // Need this to defer instantiation of get_member_object
+        using object = MapType;
+
         /// Construct from anything that the map can
         template<class... Args>
             requires (std::is_constructible_v<MapType, Args...>)
@@ -491,6 +494,7 @@ public:
     [[nodiscard]]       value&  get_value()       &  noexcept { return _value; }
     [[nodiscard]] const value&  get_value() const &  noexcept { return _value; }
     [[nodiscard]]       value&& get_value()       && noexcept { return std::move(_value); }
+    [[nodiscard]] const value&& get_value() const && noexcept { return std::move(_value); }
 
     using value_variant = std::variant <
         nullptr_t,      // null
