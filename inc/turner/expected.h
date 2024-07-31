@@ -272,7 +272,7 @@ namespace imp::exp {
 
     template <class T, class E, class U, class G>
     static constexpr auto cx45_conv_check =
-        std::is_same_v<std::remove_cv_t<T>, bool> || (
+       (std::is_same_v<std::remove_cv_t<T>, bool> || (
             !std::is_constructible_v<T, expected<U, G>&> &&
             !std::is_constructible_v<T, expected<U, G> > &&
             !std::is_constructible_v<T, const expected<U, G>&> &&
@@ -280,7 +280,7 @@ namespace imp::exp {
             !std::is_convertible_v<      expected<U, G>&, T> &&
             !std::is_convertible_v<      expected<U, G>, T> &&
             !std::is_convertible_v<const expected<U, G>&, T> &&
-            !std::is_convertible_v<const expected<U, G>, T>) &&
+            !std::is_convertible_v<const expected<U, G>, T>)) &&
         !std::is_constructible_v<unexpected<E>, expected<U, G>&> &&
         !std::is_constructible_v<unexpected<E>, expected<U, G> > &&
         !std::is_constructible_v<unexpected<E>, const expected<U, G>&> &&

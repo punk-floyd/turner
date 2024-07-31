@@ -13,7 +13,12 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
     set(TURNER_IS_MASTER_PROJECT ON)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-    set(CMAKE_CXX_CLANG_TIDY clang-tidy)
+
+    find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+    if (FALSE AND CLANG_TIDY_EXE)
+        message("Found clang-tidy: ${CLANG_TIDY_EXE}")
+        set(CMAKE_CXX_CLANG_TIDY clang-tidy)
+    endif()
 
     # Set default compiler settings for examples and test code
     if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -28,6 +33,12 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     elseif (MSVC)
         add_compile_options(/permissive- /W4)
         add_compile_definitions(NOMINMAX)
+    endif()
+
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # Ignore "note: parameter passing for argument of type [...] changed in
+        # GCC X.Y" warnings.
+        add_compile_options(-Wno-psabi)
     endif()
 endif()
 

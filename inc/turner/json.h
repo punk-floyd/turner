@@ -40,6 +40,7 @@
 #include <iterator>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <variant>
 #include <ranges>
@@ -694,7 +695,7 @@ public:
             encode_context<OutputIt, PrintPolicy> ctx {
                 .it     = it,
                 .policy = policy,
-                .print  = print
+                .print  = {print}
             };
 
             return encode_value(*this, ctx);
@@ -878,17 +879,26 @@ public:
         static constexpr auto encode_number(const number& val,
             encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
-            constexpr auto buf_len = std::numeric_limits<double>::max_digits10 + 8;
-
             if (std::isnan(val) || std::isinf(val)) {
                 return encode_error(json_error::number_invalid, ctx, ctx.policy.number_invalid);
             }
 
+            constexpr auto buf_len = std::numeric_limits<double>::max_digits10 + 8;
             std::array<char, buf_len> buf;
+#ifdef __cpp_lib_to_chars
             auto* first = buf.data();
             auto* last  = buf.data() + buf.size();
             const auto [ptr, ec] = std::to_chars(first, last, val);
             for (const auto* p = first; p != ptr; *ctx.it++ = *p++) {}
+#else
+            std::array<char, buf_len> buf2;
+            const auto len1 = std::snprintf(buf.data(),  buf_len, "%f", val);
+            const auto len2 = std::snprintf(buf2.data(), buf_len, "%g", val);
+            if (len2 < len1)
+                for (int i = 0; i<len2; ++i) *ctx.it++ = buf2[static_cast<unsigned>(i)];
+            else
+                for (int i = 0; i<len1; ++i) *ctx.it++ = buf [static_cast<unsigned>(i)];
+#endif
 
             return ctx.it;
         }
@@ -1181,8 +1191,8 @@ protected:
         // std::from_chars wants const char* parameters, not iterators.
         // We need the pointer arithmetic here because last might be end()
         // which isn't dereferenceable.
-        auto* first_char = num_buf.data();
-        auto* last_char  = num_buf.data() + num_buf.size();
+        const auto* first_char = num_buf.data();
+        const auto* last_char  = num_buf.data() + num_buf.size();
 
         if (p_ctx.policy.allow_integer_decode) {
             // If the number contains a decimal point or exponent, then it
@@ -1197,12 +1207,24 @@ protected:
             }
         }
 
+#ifdef __cpp_lib_to_chars
         number n{};
         auto [ptr, ec] = std::from_chars(first_char, last_char, n);
         if (ec != std::errc{}) {
             p_ctx.err = json_error::not_a_number;
         }
         return n;
+#else
+        char* endp;
+        number n = std::strtod(first_char, &endp);
+        if (n == HUGE_VAL) {
+            p_ctx.err = json_error::number_out_of_range;
+        }
+        else if (*endp != '\0') {
+            p_ctx.err = json_error::not_a_number;
+        }
+        return n;
+#endif
     }
 
     // Parse an object definition
