@@ -161,6 +161,15 @@ enum class print_linebreak_style : std::uint8_t {
 
 namespace imp {
 
+    /// Defines an overload set for using the overload pattern with std::visit
+    template <class... Ts>
+    struct Overload : Ts... {
+        using Ts::operator() ...;
+    };
+
+    // Deduction guide
+    template<class... Ts> Overload(Ts...) -> Overload<Ts...>;
+
     // -- Line breaks ------------------------------------------------------
 
     // A type defines a linebreak style if defines a json_linebreak_style
@@ -738,26 +747,15 @@ public:
         static auto encode_value (const value& val,
             encode_context<OutputIt, PrintPolicy>& ctx) -> encode_result<OutputIt>
         {
-            const auto visitor = [&ctx](const auto& v) -> encode_result<OutputIt> {
-                if      constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, object>)
-                    return encode_object(v, ctx);
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, array>)
-                    return encode_array(v, ctx);
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, string>)
-                    return encode_string(v, ctx);
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, number>)
-                    return encode_number(v, ctx);
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, integer>)
-                    return encode_integer(v, ctx);
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, bool>)
-                    return encode_literal(v ? "true" : "false", ctx);
-                else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(v)>, nullptr_t>)
-                    return encode_literal("null", ctx);
-                else
-                    return encode_error(json_error::invalid_json_value, ctx, ctx.policy.value_invalid);
-            };
-
-            return std::visit(visitor, static_cast<const value_variant&>(val));
+            return std::visit(imp::Overload {
+                [&ctx](const object& v) { return encode_object(v, ctx);  },
+                [&ctx](const array&  v) { return encode_array(v, ctx);   },
+                [&ctx](const string& v) { return encode_string(v, ctx);  },
+                [&ctx](number        v) { return encode_number(v, ctx);  },
+                [&ctx](integer       v) { return encode_integer(v, ctx); },
+                [&ctx](bool          v) { return encode_literal(v ? "true" : "false", ctx); },
+                [&ctx](nullptr_t     v) { (void)v; return encode_literal("null", ctx); }
+            }, static_cast<const value_variant&>(val));
         }
 
         /// JSON-encode the given object to the given output iterator
