@@ -287,6 +287,45 @@ public:
         json_error  err{};  ///< Offending error code, or 0
     };
 
+    // -- Helper factory routines
+
+    // Make json object from the given range
+    template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
+    [[nodiscard]] static
+    auto make_json(InputIt first, Stop last, decode_policy policy = decode_policy{})
+        -> expected<json, decode_result<InputIt>>
+    {
+        expected<json, decode_result<InputIt>> ret_val;
+        auto res = ret_val.value().decode(first, last, policy);
+        if (res)
+            return ret_val;
+
+        return unexpected{res};
+    }
+
+    // Make json object from the given range
+    template <std::ranges::input_range R>
+    [[nodiscard]] static
+    auto make_json(R&& r, decode_policy policy = decode_policy{})
+    {
+        return make_json(std::begin(r), std::end(r), policy);
+    }
+
+    // Make JSON object from the given NULL-terminated C string
+    [[nodiscard]] static
+    auto make_json(const char* src, decode_policy policy = decode_policy{})
+    {
+        return make_json(std::string_view{src}, policy);
+    }
+
+    // Make JSON object from the given input stream
+    [[nodiscard]] static
+    auto make_json(std::istream& ifs, decode_policy policy = decode_policy{})
+    {
+        return make_json(std::istreambuf_iterator<char>{ifs},
+            std::istreambuf_iterator<char>{std::default_sentinel}, policy);
+    }
+
 private:
 
     /// Parsing context used by the parsing implementation
@@ -319,9 +358,7 @@ public:
      *
      * @param first     The start of the range to decode
      * @param last      The end of the range to decode
-     * @param greedy    If true, the method will attempt to decode the whole
-     *  input range. If false, decoding will stop after successfully
-     *  decoding the top level JSON value.
+     * @param policy    The decoding policy parameters
      *
      * @return Returns a decode_result containing results; @see decode_result
      */
@@ -356,9 +393,8 @@ public:
     /// Decode data from the given input stream
     auto decode_stream(std::istream& ifs, decode_policy policy = decode_policy{})
     {
-        auto if_begin = std::istreambuf_iterator<char>{ifs};
-        auto if_end   = std::istreambuf_iterator<char>{std::default_sentinel};
-        return decode(if_begin, if_end, policy);
+        return decode(std::istreambuf_iterator<char>{ifs},
+            std::istreambuf_iterator<char>{std::default_sentinel}, policy);
     }
 
     // -- Attributes
