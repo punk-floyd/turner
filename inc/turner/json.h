@@ -54,8 +54,15 @@
 
 // A local C++20 implementation of C++23 std::expected
 #include "expected.h"
+#include "turner_version.h"     // Defines library version
 
 namespace turner {
+
+inline constexpr std::string_view lib_version_string = TURNER_VER_STR;
+inline constexpr int lib_version_major     = TURNER_VER_MAJ;
+inline constexpr int lib_version_minor     = TURNER_VER_MIN;
+inline constexpr int lib_version_sub_minor = TURNER_VER_SUB_MIN;
+inline constexpr int lib_version_package   = TURNER_VER_PKG;
 
 // -- JSON error codes and support -----------------------------------------
 
@@ -292,7 +299,7 @@ public:
     // Make json object from the given range
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
     [[nodiscard]] static
-    auto make_json(InputIt first, Stop last, decode_policy policy = decode_policy{})
+    auto parse_json(InputIt first, Stop last, decode_policy policy = decode_policy{})
         -> expected<json, decode_result<InputIt>>
     {
         expected<json, decode_result<InputIt>> ret_val;
@@ -306,23 +313,23 @@ public:
     // Make json object from the given range
     template <std::ranges::input_range R>
     [[nodiscard]] static
-    auto make_json(R&& r, decode_policy policy = decode_policy{})
+    auto parse_json(R&& r, decode_policy policy = decode_policy{})
     {
-        return make_json(std::begin(r), std::end(r), policy);
+        return parse_json(std::begin(r), std::end(r), policy);
     }
 
     // Make JSON object from the given NULL-terminated C string
     [[nodiscard]] static
-    auto make_json(const char* src, decode_policy policy = decode_policy{})
+    auto parse_json(const char* src, decode_policy policy = decode_policy{})
     {
-        return make_json(std::string_view{src}, policy);
+        return parse_json(std::string_view{src}, policy);
     }
 
     // Make JSON object from the given input stream
     [[nodiscard]] static
-    auto make_json(std::istream& ifs, decode_policy policy = decode_policy{})
+    auto parse_json(std::istream& ifs, decode_policy policy = decode_policy{})
     {
-        return make_json(std::istreambuf_iterator<char>{ifs},
+        return parse_json(std::istreambuf_iterator<char>{ifs},
             std::istreambuf_iterator<char>{std::default_sentinel}, policy);
     }
 
@@ -403,91 +410,24 @@ public:
 
     // -- JSON value types
 
-    using object = std::map<std::string, value, std::less<>>;
+    template <class MapType> class MapWrap;
+
     using array  = std::vector<value>;
     using string = std::string;
     using number = double;
     using integer = std::int64_t;       // Non-standard
+    using object = MapWrap<std::map<std::string, value, std::less<>>>;
 
-    /// Access root value
-    [[nodiscard]]       value&  get_value()       &  noexcept { return _value; }
-    [[nodiscard]] const value&  get_value() const &  noexcept { return _value; }
-    [[nodiscard]]       value&& get_value()       && noexcept { return std::move(_value); }
-    [[nodiscard]] const value&& get_value() const && noexcept { return std::move(_value); } // NOLINT(performance-move-const-arg)
-
-    using value_variant = std::variant <
-        nullptr_t,      // null
-        object,         // { ... }
-        array,          // [ ... ]
-        string,         //  "..."
-        number,         // 123.456
-        integer,        // 123  (non standard for decoding)
-        bool            // true/false
-    >;
-
-    /// A JSON value: one of: string, number, object, array, Boolean, or null
-    class value : public value_variant
+    /// A thin wrapper around a std::map that exposes a few helper accessor routines
+    template <class MapType>
+    class MapWrap : public MapType
     {
     public:
 
         // -- Construction
 
-        // Default construction is a JSON null
-        value() noexcept = default;
-
-        // Construct from a value (pass through)
-        template <class Arg>
-            requires (!std::is_same_v<std::remove_cvref_t<Arg>, value> && std::is_constructible_v<value_variant, Arg>)
-        value(Arg&& arg) noexcept(std::is_nothrow_constructible_v<value_variant, Arg>)
-            : value_variant(std::forward<Arg>(arg))
-        {}
-
-        // -- Observers
-
-        [[nodiscard]] constexpr bool is_object() const noexcept { return is<object>(); }
-        [[nodiscard]]       object&      get_object()       &           { return get<object>(); }
-        [[nodiscard]] const object&      get_object() const &           { return get<object>(); }
-        [[nodiscard]]       object&&     get_object()       &&          { return std::move(get<object>()); }
-        [[nodiscard]]       object*      get_object_if()       noexcept { return try_get<object>(); }
-        [[nodiscard]] const object*      get_object_if() const noexcept { return try_get<object>(); }
-
-        [[nodiscard]] constexpr bool     is_array()  const noexcept { return is<array>(); }
-        [[nodiscard]]       array&       get_array()       &            { return get<array>(); }
-        [[nodiscard]] const array&       get_array() const &            { return get<array>(); }
-        [[nodiscard]]       array&&      get_array()       &&           { return std::move(get<array>()); }
-        [[nodiscard]]       array*       get_array_if()       noexcept  { return try_get<array>(); }
-        [[nodiscard]] const array*       get_array_if() const noexcept  { return try_get<array>(); }
-
-        [[nodiscard]] constexpr bool is_string() const noexcept { return is<string>(); }
-        [[nodiscard]]       string&      get_string()       &            { return get<string>(); }
-        [[nodiscard]] const string&      get_string() const &            { return get<string>(); }
-        [[nodiscard]]       string&&     get_string()      &&            { return std::move(get<string>()); }
-        [[nodiscard]]       string*      get_string_if()       noexcept  { return try_get<string>(); }
-        [[nodiscard]] const string*      get_string_if() const noexcept  { return try_get<string>(); }
-
-        [[nodiscard]] constexpr bool is_number() const noexcept { return is<number>(); }
-        [[nodiscard]]       number&      get_number()                    { return get<number>(); }
-        [[nodiscard]] const number&      get_number() const              { return get<number>(); }
-        [[nodiscard]]       number*      get_number_if()       noexcept  { return try_get<number>(); }
-        [[nodiscard]] const number*      get_number_if() const noexcept  { return try_get<number>(); }
-
-        [[nodiscard]] constexpr bool is_integer() const noexcept { return is<integer>(); }
-        [[nodiscard]]       integer&     get_integer()                   { return get<integer>(); }
-        [[nodiscard]] const integer&     get_integer() const             { return get<integer>(); }
-        [[nodiscard]]       integer*     get_integer_if()       noexcept { return try_get<integer>(); }
-        [[nodiscard]] const integer*     get_integer_if() const noexcept { return try_get<integer>(); }
-
-        [[nodiscard]] constexpr bool is_bool()   const noexcept { return is<bool>();  }
-        [[nodiscard]]       bool&        get_bool()                      { return get<bool>(); }
-        [[nodiscard]] const bool&        get_bool() const                { return get<bool>(); }
-        [[nodiscard]]       bool*        get_bool_if()       noexcept    { return try_get<bool>(); }
-        [[nodiscard]] const bool*        get_bool_if() const noexcept    { return try_get<bool>(); }
-
-        [[nodiscard]] constexpr bool is_null()   const noexcept { return is<nullptr_t>(); }
-        [[nodiscard]]       nullptr_t&   get_null()                      { return get<nullptr_t>(); }
-        [[nodiscard]] const nullptr_t&   get_null() const                { return get<nullptr_t>(); }
-        [[nodiscard]]       nullptr_t*   get_null_if()       noexcept    { return try_get<nullptr_t>(); }
-        [[nodiscard]] const nullptr_t*   get_null_if() const noexcept    { return try_get<nullptr_t>(); }
+        // Inherit base class constructors
+        using MapType::MapType;
 
         // -- Accessor helpers for JSON objects
 
@@ -633,8 +573,8 @@ public:
          *  an object type.
          */
         [[nodiscard]] auto get_member_object(std::string_view name,
-            std::optional<object> default_value = std::nullopt) const
-                -> turner::expected<object, std::string>
+            std::optional<MapWrap> default_value = std::nullopt) const
+                -> turner::expected<MapWrap, std::string>
         {
             // Note this returns a *copy* of the object
             return get_member_imp(name, std::move(default_value), "object");
@@ -665,24 +605,24 @@ public:
             return get_member_imp(name, std::move(default_value), "array");
         }
 
-private:
+        // -- Implementation
+
+        using MapType::operator[];
+        using MapType::operator=;
+
+    private:
 
         template <class T>
         [[nodiscard]] auto get_member_imp(std::string_view name,
             std::optional<T> default_value, std::string_view type_name) const
                 -> turner::expected<T, std::string>
         {
-            // This method only applies to JSON objects
-            const auto* obj = get_object_if();
-            if (nullptr == obj)
-                return turner::unexpected{"Value is not an object"};
-
             // Look up the named member in out map
-            const auto it = obj->find(name);
-            if ((it == obj->cend()) && default_value)
+            const auto it = this->find(name);
+            if ((it == this->cend()) && default_value)
                 return default_value.value();   // Not in map, use default value
 
-            if ((it == obj->cend()) || (!it->second.is<T>())) {
+            if ((it == this->cend()) || (!it->second.template is<T>())) {
                 // Named member is not in map, or is not of the expected type
                 std::string msg{"Missing required "};
                 msg.append(type_name);
@@ -691,10 +631,82 @@ private:
                 return turner::unexpected{std::move(msg)};
             }
 
-            return it->second.get<T>();
+            return it->second.template get<T>();
         }
+    };
 
-public:
+    /// Access root value
+    [[nodiscard]]       value&  get_value()       &  noexcept { return _value; }
+    [[nodiscard]] const value&  get_value() const &  noexcept { return _value; }
+    [[nodiscard]]       value&& get_value()       && noexcept { return std::move(_value); }
+    [[nodiscard]] const value&& get_value() const && noexcept { return std::move(_value); } // NOLINT(performance-move-const-arg)
+
+    using value_variant = std::variant <
+        nullptr_t,      // null
+        object,         // { ... }
+        array,          // [ ... ]
+        string,         //  "..."
+        number,         // 123.456
+        integer,        // 123  (non standard for decoding)
+        bool            // true/false
+    >;
+
+    /// A JSON value: one of: string, number, object, array, Boolean, or null
+    class value : public value_variant
+    {
+    public:
+
+        // -- Construction
+
+        // Inherit base class constructors
+        using value_variant::value_variant;
+
+        // -- Observers
+
+        [[nodiscard]] constexpr bool is_object() const noexcept { return is<object>(); }
+        [[nodiscard]]       object&      get_object()       &           { return get<object>(); }
+        [[nodiscard]] const object&      get_object() const &           { return get<object>(); }
+        [[nodiscard]]       object&&     get_object()       &&          { return std::move(get<object>()); }
+        [[nodiscard]]       object*      get_object_if()       noexcept { return try_get<object>(); }
+        [[nodiscard]] const object*      get_object_if() const noexcept { return try_get<object>(); }
+
+        [[nodiscard]] constexpr bool     is_array()  const noexcept { return is<array>(); }
+        [[nodiscard]]       array&       get_array()       &            { return get<array>(); }
+        [[nodiscard]] const array&       get_array() const &            { return get<array>(); }
+        [[nodiscard]]       array&&      get_array()       &&           { return std::move(get<array>()); }
+        [[nodiscard]]       array*       get_array_if()       noexcept  { return try_get<array>(); }
+        [[nodiscard]] const array*       get_array_if() const noexcept  { return try_get<array>(); }
+
+        [[nodiscard]] constexpr bool is_string() const noexcept { return is<string>(); }
+        [[nodiscard]]       string&      get_string()       &            { return get<string>(); }
+        [[nodiscard]] const string&      get_string() const &            { return get<string>(); }
+        [[nodiscard]]       string&&     get_string()      &&            { return std::move(get<string>()); }
+        [[nodiscard]]       string*      get_string_if()       noexcept  { return try_get<string>(); }
+        [[nodiscard]] const string*      get_string_if() const noexcept  { return try_get<string>(); }
+
+        [[nodiscard]] constexpr bool is_number() const noexcept { return is<number>(); }
+        [[nodiscard]]       number&      get_number()                    { return get<number>(); }
+        [[nodiscard]] const number&      get_number() const              { return get<number>(); }
+        [[nodiscard]]       number*      get_number_if()       noexcept  { return try_get<number>(); }
+        [[nodiscard]] const number*      get_number_if() const noexcept  { return try_get<number>(); }
+
+        [[nodiscard]] constexpr bool is_integer() const noexcept { return is<integer>(); }
+        [[nodiscard]]       integer&     get_integer()                   { return get<integer>(); }
+        [[nodiscard]] const integer&     get_integer() const             { return get<integer>(); }
+        [[nodiscard]]       integer*     get_integer_if()       noexcept { return try_get<integer>(); }
+        [[nodiscard]] const integer*     get_integer_if() const noexcept { return try_get<integer>(); }
+
+        [[nodiscard]] constexpr bool is_bool()   const noexcept { return is<bool>();  }
+        [[nodiscard]]       bool&        get_bool()                      { return get<bool>(); }
+        [[nodiscard]] const bool&        get_bool() const                { return get<bool>(); }
+        [[nodiscard]]       bool*        get_bool_if()       noexcept    { return try_get<bool>(); }
+        [[nodiscard]] const bool*        get_bool_if() const noexcept    { return try_get<bool>(); }
+
+        [[nodiscard]] constexpr bool is_null()   const noexcept { return is<nullptr_t>(); }
+        [[nodiscard]]       nullptr_t&   get_null()                      { return get<nullptr_t>(); }
+        [[nodiscard]] const nullptr_t&   get_null() const                { return get<nullptr_t>(); }
+        [[nodiscard]]       nullptr_t*   get_null_if()       noexcept    { return try_get<nullptr_t>(); }
+        [[nodiscard]] const nullptr_t*   get_null_if() const noexcept    { return try_get<nullptr_t>(); }
 
         template <typename T>
         [[nodiscard]] constexpr bool is() const noexcept
@@ -969,14 +981,7 @@ public:
 
         // -- Implementation
 
-        // Gang of five. Moving and copying okay, but we need custom copying
-        // because std::unique_ptr isn't copyable.
-
-        ~value() = default;
-        value(value&&) noexcept              = default;
-        value& operator=(value&&) noexcept   = default;
-        value(const value& other)            = default;
-        value& operator=(const value& other) = default;
+        using value_variant::operator=;
 
         // I'd use a concept here, but we can't forward declare an inner class
         // and I'd like to keep everything tucked into the class.
@@ -1103,7 +1108,7 @@ protected:
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop, std::output_iterator<char> OutputIt>
     constexpr bool parse_unicode_point(parse_ctx<InputIt, Stop>& p_ctx, OutputIt&& out_it) const
     {
-        const auto hex_char_value = [](char ch) -> std::optional<uint16_t> {
+        const auto hex_char_value = [](char ch) -> std::optional<int> {
             if ((ch >= '0') && (ch <= '9')) { return  0 + (ch - '0'); }
             if ((ch >= 'a') && (ch <= 'f')) { return 10 + (ch - 'a'); }
             if ((ch >= 'A') && (ch <= 'F')) { return 10 + (ch - 'A'); }

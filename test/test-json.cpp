@@ -498,39 +498,39 @@ TEST_CASE ("JSON object member lookup") {
     obj.emplace(std::make_pair("f", json::make_array()));
     obj.emplace(std::make_pair("g", json::object{}));
     obj.emplace(std::make_pair("h", integer_value));
-    const json::value v{std::move(obj)};
+    //const json::value v{std::move(obj)};
 
     // Check lookups that should be there
-    CHECK  (v.get_member_string("a"));
-    CHECK  (v.get_member_string("a").value() == str_value);
-    CHECK  (v.get_member_number("b"));
-    CHECK_THAT(v.get_member_number("b").value(), WithinRel(number_value, eps));
-    CHECK  (v.get_member_null("c"));
-    CHECK  (v.get_member_null("c").value() == nullptr);
-    CHECK  (v.get_member_bool("d"));
-    CHECK  (v.get_member_bool("d").value() == true);
-    CHECK  (v.get_member_bool("e"));
-    CHECK  (v.get_member_bool("e").value() == false);
-    CHECK  (v.get_member_array("f"));
-    CHECK  (v.get_member_object("g"));
-    CHECK  (v.get_member_integer("h"));
-    CHECK  (v.get_member_integer("h").value() == integer_value);
+    CHECK  (obj.get_member_string("a"));
+    CHECK  (obj.get_member_string("a").value() == str_value);
+    CHECK  (obj.get_member_number("b"));
+    CHECK_THAT(obj.get_member_number("b").value(), WithinRel(number_value, eps));
+    CHECK  (obj.get_member_null("c"));
+    CHECK  (obj.get_member_null("c").value() == nullptr);
+    CHECK  (obj.get_member_bool("d"));
+    CHECK  (obj.get_member_bool("d").value() == true);
+    CHECK  (obj.get_member_bool("e"));
+    CHECK  (obj.get_member_bool("e").value() == false);
+    CHECK  (obj.get_member_array("f"));
+    CHECK  (obj.get_member_object("g"));
+    CHECK  (obj.get_member_integer("h"));
+    CHECK  (obj.get_member_integer("h").value() == integer_value);
 
     // Check bad lookups with default returns
-    CHECK  (v.get_member_string("No", "default").value() == "default");
-    CHECK_THAT(v.get_member_number("Non", 3.14159).value(), WithinRel(3.14159, eps));
-    CHECK  (v.get_member_null("Nee", nullptr).value() == nullptr);
-    CHECK  (v.get_member_bool("いいえ", true).value() == true);
-    CHECK  (v.get_member_array("不", json::array{}).has_value());
-    CHECK  (v.get_member_object("Нет", json::object{}).has_value());
-    CHECK  (v.get_member_integer("E", 1234).value() == 1234);
+    CHECK  (obj.get_member_string("No", "default").value() == "default");
+    CHECK_THAT(obj.get_member_number("Non", 3.14159).value(), WithinRel(3.14159, eps));
+    CHECK  (obj.get_member_null("Nee", nullptr).value() == nullptr);
+    CHECK  (obj.get_member_bool("いいえ", true).value() == true);
+    CHECK  (obj.get_member_array("不", json::array{}).has_value());
+    CHECK  (obj.get_member_object("Нет", json::object{}).has_value());
+    CHECK  (obj.get_member_integer("E", 1234).value() == 1234);
 
     // Check bad lookup with no default
-    CHECK_FALSE(v.get_member_string("Não"));
-    CHECK_FALSE(v.get_member_number("아니요"));
-    CHECK_FALSE(v.get_member_null("لا"));
-    CHECK_FALSE(v.get_member_bool("Nej"));
-    CHECK_FALSE(v.get_member_array(" Όχι"));
-    CHECK_FALSE(v.get_member_object("नहीं"));
-    CHECK_FALSE(v.get_member_integer("Hayır"));
+    CHECK_FALSE(obj.get_member_string("Não"));
+    CHECK_FALSE(obj.get_member_number("아니요"));
+    CHECK_FALSE(obj.get_member_null("لا"));
+    CHECK_FALSE(obj.get_member_bool("Nej"));
+    CHECK_FALSE(obj.get_member_array(" Όχι"));
+    CHECK_FALSE(obj.get_member_object("नहीं"));
+    CHECK_FALSE(obj.get_member_integer("Hayır"));
 }
