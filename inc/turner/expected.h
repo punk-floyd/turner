@@ -566,26 +566,34 @@ private:
 
     [[nodiscard]] constexpr T& value()&
     {
-        return has_value() ? _value :
+        if (!has_value())
             throw bad_expected_access(std::as_const(error()));
+
+        return _value;
     }
 
     [[nodiscard]] constexpr const T& value() const &
     {
-        return has_value() ? _value :
+        if (!has_value())
             throw bad_expected_access(std::as_const(error()));
+
+        return _value;
     }
 
     [[nodiscard]] constexpr T&& value() &&
     {
-        return has_value() ? std::move(_value) :
-            throw bad_expected_access(_error);
+        if (!has_value())
+            throw bad_expected_access(std::move(_error));
+
+        return std::move(_value);
     }
 
     [[nodiscard]] constexpr const T&& value() const &&
     {
-        return has_value() ? std::move(_value) :
-            throw bad_expected_access(_error);
+        if (!has_value())
+            throw bad_expected_access(std::move(_error));
+
+        return std::move(_value);
     }
 
     constexpr explicit operator bool() const noexcept
