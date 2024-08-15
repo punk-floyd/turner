@@ -139,6 +139,23 @@ TEST_CASE ("Simple runtime parsing check" "[parsing]") {
         CHECK_THAT(uut.get_value().get_number(), WithinRel(3.14159, eps));
     }
 
+#ifdef TURNER_DEFAULT_ALLOW_INTEGER_DECODE
+
+    SECTION ("Parse numerics: is_numeric/get_as_number") {
+        REQUIRE (uut.decode("42", allow_int_decode));
+        CHECK   (uut.get_value().is_integer());
+        CHECK   (uut.get_value().get_integer() == 42);
+        CHECK   (uut.get_value().is_numeric());
+        CHECK_THAT(uut.get_value().get_as_number(), WithinRel(42, eps));
+
+        REQUIRE (uut.decode("42.0", allow_int_decode));
+        CHECK   (uut.get_value().is_number());
+        CHECK   (uut.get_value().is_numeric());
+        CHECK_THAT(uut.get_value().get_as_number(), WithinRel(42, eps));
+    }
+
+#endif
+
     // -- Strings
     SECTION ("Parse strings: Basic string") {
         REQUIRE (uut.decode(R"|("Hello, world!")|"));

@@ -667,6 +667,7 @@ public:
         [[nodiscard]]       object&      get_object()       &           { return get<object>(); }
         [[nodiscard]] const object&      get_object() const &           { return get<object>(); }
         [[nodiscard]]       object&&     get_object()       &&          { return std::move(get<object>()); }
+        [[nodiscard]] const object&&     get_object() const &&          { return std::move(get<object>()); }
         [[nodiscard]]       object*      get_object_if()       noexcept { return try_get<object>(); }
         [[nodiscard]] const object*      get_object_if() const noexcept { return try_get<object>(); }
 
@@ -674,13 +675,15 @@ public:
         [[nodiscard]]       array&       get_array()       &            { return get<array>(); }
         [[nodiscard]] const array&       get_array() const &            { return get<array>(); }
         [[nodiscard]]       array&&      get_array()       &&           { return std::move(get<array>()); }
+        [[nodiscard]] const array&&      get_array() const &&           { return std::move(get<array>()); }
         [[nodiscard]]       array*       get_array_if()       noexcept  { return try_get<array>(); }
         [[nodiscard]] const array*       get_array_if() const noexcept  { return try_get<array>(); }
 
         [[nodiscard]] constexpr bool is_string() const noexcept { return is<string>(); }
         [[nodiscard]]       string&      get_string()       &            { return get<string>(); }
         [[nodiscard]] const string&      get_string() const &            { return get<string>(); }
-        [[nodiscard]]       string&&     get_string()      &&            { return std::move(get<string>()); }
+        [[nodiscard]]       string&&     get_string()       &&           { return std::move(get<string>()); }
+        [[nodiscard]] const string&&     get_string() const &&           { return std::move(get<string>()); }
         [[nodiscard]]       string*      get_string_if()       noexcept  { return try_get<string>(); }
         [[nodiscard]] const string*      get_string_if() const noexcept  { return try_get<string>(); }
 
@@ -707,6 +710,40 @@ public:
         [[nodiscard]] const nullptr_t&   get_null() const                { return get<nullptr_t>(); }
         [[nodiscard]]       nullptr_t*   get_null_if()       noexcept    { return try_get<nullptr_t>(); }
         [[nodiscard]] const nullptr_t*   get_null_if() const noexcept    { return try_get<nullptr_t>(); }
+
+#ifdef TURNER_DEFAULT_ALLOW_INTEGER_DECODE
+
+        // When TURNER_DEFAULT_ALLOW_INTEGER_DECODE is enabled, numbers
+        // without decimal points or exponents will be parsed as integers.
+        // For those wanting to parse integers, this is great. However, this
+        // does introduce a potential wrinkle for code that expects numbers.
+        // For example, suppose a particular value represents a temperature
+        // value. In most cases it's going to be some number-looking thing
+        // that will be parsed as a number (e.g., 25.125, 45.625, etc.),
+        // but sometimes the temperature will be (close to) a whole degree
+        // (e.g., 25.00001) and depending on how the encoder implements
+        // things (e.g., will it emit "25" or "25.0"?) it could get picked
+        // up as a number or as an integer. This could be problematic for
+        // code that is expecting a particular field to be a number. These
+        // routines are intended to mitigate that problem.
+        //
+        // Note that integer decoding is a non-standard feature that one
+        // needs to opt-in for, so none of this stuff applies to folks who
+        // only deal with standard JSON numbers.
+
+        /// Returns true if this value is either an integer or a number
+        [[nodiscard]] constexpr bool is_numeric() const noexcept
+            { return is_number() || is_integer(); }
+
+        /// Returns this numeric value as a JSON number
+        [[nodiscard]] number get_as_number() const
+        {
+            if (is_integer())
+                return static_cast<number>(get_integer());
+
+            return get_number();
+        }
+#endif
 
         template <typename T>
         [[nodiscard]] constexpr bool is() const noexcept
@@ -1002,27 +1039,38 @@ public:
         /// Get value as lvalue reference
         template <typename T>
             requires (is_json_value_type<T>)
-        [[nodiscard]] constexpr T& get() & { return std::get<T>(*this); }
+        [[nodiscard]] constexpr T& get() &
+        { return std::get<T>(*this); }
 
         /// Get value as const lvalue reference
         template <typename T>
             requires (is_json_value_type<T>)
-        [[nodiscard]] constexpr const T& get() const & { return std::get<T>(*this); }
+        [[nodiscard]] constexpr const T& get() const &
+        { return std::get<T>(*this); }
 
         /// Get value as rvalue reference
         template <typename T>
             requires (is_json_value_type<T>)
-        [[nodiscard]] constexpr T&& get() && { return std::get<T>(std::move(*this)); }
+        [[nodiscard]] constexpr T&& get() &&
+        { return std::get<T>(std::move(*this)); }
+
+        /// Get value as const rvalue reference
+        template <typename T>
+            requires (is_json_value_type<T>)
+        [[nodiscard]] constexpr const T&& get() const &&
+        { return std::get<T>(std::move(*this)); }
 
         /// Get pointer to value if type matches or nullptr otherwise
         template <typename T>
             requires (is_json_value_type<T>)
-        [[nodiscard]] constexpr T* try_get() noexcept { return std::get_if<T>(this); }
+        [[nodiscard]] constexpr T* try_get() noexcept
+        { return std::get_if<T>(this); }
 
         /// Get const pointer to value if type matches or nullptr otherwise
         template <typename T>
             requires (is_json_value_type<T>)
-        [[nodiscard]] constexpr const T* try_get() const noexcept { return std::get_if<T>(this); }
+        [[nodiscard]] constexpr const T* try_get() const noexcept
+        { return std::get_if<T>(this); }
     };
 
     /// Make a JSON array populated with zero or more values

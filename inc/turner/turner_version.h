@@ -38,10 +38,10 @@
 
 // NOLINTBEGIN(modernize-macro-to-enum)
 
-#define TURNER_VER_STR                      "1.0.1"
+#define TURNER_VER_STR                      "1.0.2"
 #define TURNER_VER_MAJ                      1
 #define TURNER_VER_MIN                      0
-#define TURNER_VER_SUB_MIN                  1
+#define TURNER_VER_SUB_MIN                  2
 #define TURNER_VER_PKG                      0
 
 // NOLINTEND(modernize-macro-to-enum)

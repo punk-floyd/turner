@@ -10,6 +10,8 @@ macro(define_my_test test_name src_file)
 endmacro()
 
 define_my_test(test-json      test-json.cpp)
+target_compile_definitions(test-json PRIVATE TURNER_DEFAULT_ALLOW_INTEGER_DECODE)
+
 define_my_test(test-expected  test-expected.cpp)
 
 # Bring the sample.json file into the test directory
