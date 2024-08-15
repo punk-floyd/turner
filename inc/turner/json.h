@@ -476,7 +476,11 @@ public:
             std::optional<number> default_value = std::nullopt) const
                 -> turner::expected<number, std::string>
         {
+#ifdef TURNER_DEFAULT_ALLOW_INTEGER_DECODE
+            return get_member_numeric(name, default_value);
+#else
             return get_member_imp(name, default_value, "number");
+#endif
         }
 
         /**
@@ -617,7 +621,7 @@ public:
             std::optional<T> default_value, std::string_view type_name) const
                 -> turner::expected<T, std::string>
         {
-            // Look up the named member in out map
+            // Look up the named member in our map
             const auto it = this->find(name);
             if ((it == this->cend()) && default_value)
                 return default_value.value();   // Not in map, use default value
@@ -633,6 +637,28 @@ public:
 
             return it->second.template get<T>();
         }
+
+#ifdef TURNER_DEFAULT_ALLOW_INTEGER_DECODE
+        [[nodiscard]]
+        auto get_member_numeric(std::string_view name,
+            std::optional<number> default_value) const
+                -> turner::expected<number, std::string>
+        {
+            // Look up the named member in our map
+            const auto it = this->find(name);
+            if ((it == this->cend()) && default_value)
+                return default_value.value();   // Not in map, use default value
+
+            if ((it == this->cend()) || !it->second.is_numeric()) {
+                // Named member is not in map, or is not of the expected type
+                std::string msg{"Missing required numeric member: "};
+                msg.append(name);
+                return turner::unexpected{std::move(msg)};
+            }
+
+            return it->second.get_as_number();
+        }
+#endif
     };
 
     /// Access root value

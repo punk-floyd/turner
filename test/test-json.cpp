@@ -533,6 +533,12 @@ TEST_CASE ("JSON object member lookup") {
     CHECK  (obj.get_member_integer("h"));
     CHECK  (obj.get_member_integer("h").value() == integer_value);
 
+#ifdef TURNER_DEFAULT_ALLOW_INTEGER_DECODE
+    // Ensure get_member_number works okay with parsed integers
+    CHECK     (obj.get_member_number("h"));
+    CHECK_THAT(obj.get_member_number("h").value(), WithinRel(integer_value, eps));
+#endif
+
     // Check bad lookups with default returns
     CHECK  (obj.get_member_string("No", "default").value() == "default");
     CHECK_THAT(obj.get_member_number("Non", 3.14159).value(), WithinRel(3.14159, eps));
