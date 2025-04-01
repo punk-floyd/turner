@@ -17,7 +17,15 @@
 
 #include <turner/expected.h>         // UUT
 
+using namespace std::literals::string_view_literals;
+using namespace std::literals::string_literals;
+
 // NOLINTBEGIN(readability-function-cognitive-complexity)
+
+// Any CHECK/REQUEST that involves a std::move will trigger this warning.
+// It's not a real problem. The __VA_ARGS__ that contains the move operation
+// is in the macro expansion twice, but it's only invoked once.
+// NOLINTBEGIN(bugprone-use-after-move)
 
 TEST_CASE ("turner::unexpected") {
 
@@ -313,7 +321,7 @@ TEST_CASE ("turner::expected<!void,...> construction (constexpr)") {
         int     _a{};
         std::size_t  _sz{};
     public:
-        constexpr Foo(int a) noexcept : _a(a) {}
+        constexpr explicit Foo(int a) noexcept : _a(a) {}
         constexpr Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
         [[nodiscard]] constexpr int get() const noexcept { return _a; }
         [[nodiscard]] constexpr std::size_t size() const noexcept { return _sz; }
@@ -362,7 +370,6 @@ TEST_CASE ("turner::expected<!void,...> observers") {
         // T&&
         const auto moved_value = *std::move(uut_val);
         REQUIRE(moved_value == sample_value);
-        REQUIRE(uut_val->empty());  // NOLINT(bugprone-use-after-move)
         // const T&&
         my_expected uut_val2{sample_value};
         const auto not_moved_value = *static_cast<const my_expected&&>(uut_val2);
@@ -424,7 +431,7 @@ TEST_CASE ("turner::expected emplace") {
         std::size_t  _sz{};
     public:
         constexpr Foo() = default;
-        constexpr Foo(int a) noexcept : _a(a) {}
+        constexpr explicit Foo(int a) noexcept : _a(a) {}
         constexpr Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
         [[nodiscard]] constexpr int get() const noexcept { return _a; }
         [[nodiscard]] constexpr std::size_t size() const noexcept { return _sz; }
@@ -531,7 +538,350 @@ TEST_CASE ("turner::expected<!void,...> assignment") {
     // TODO : Assign from an unexpected value
 }
 
-// TODO : Monadic operations
+TEST_CASE ("turner::expected: monadic operations")
+{
+    // NB: This case tests both non-void and void variants of expected
+
+    using my_val_type   = int;
+    using my_err_type   = std::string;
+    using exp_type      = turner::expected<my_val_type, my_err_type>;
+    using exp_type_void = turner::expected<void,        my_err_type>;
+
+    static constexpr auto* error_text = "Boo hoo";
+    static constexpr auto* alt_text = "Alfred E. Neuman";
+    static constexpr my_val_type val_value = 12;
+
+    // -- and_then
+
+    const auto and_then_to_non_void = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .and_then([](const auto& v) -> turner::expected<std::string, my_err_type>
+                { return std::to_string(v); });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, std::string>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut && uut.value() == std::to_string(val_value);
+    };
+
+    const auto and_then_to_void = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .and_then([](const auto&) -> turner::expected<void, my_err_type> { return {}; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, void>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut.has_value();
+    };
+
+    const auto and_then_void_to_void = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .and_then([]() -> turner::expected<void, my_err_type> { return {}; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, void>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut.has_value();
+    };
+
+    const auto and_then_void_to_non_void = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .and_then([]() -> turner::expected<my_val_type, my_err_type> { return val_value; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut.has_value() && (uut.value() == val_value);
+    };
+
+    const auto and_then_val_to_error = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .and_then([](const auto&) -> turner::expected<my_val_type, my_err_type>
+                { return turner::unexpected{error_text}; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return !uut && (uut.error() == error_text);
+    };
+
+    const auto and_then_pass_thru_error = [](auto&& err) {
+        const auto uut = std::forward<decltype(err)>(err)
+            .and_then([](const auto& v) -> turner::expected<std::string, my_err_type>
+                { return std::to_string(v); });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, std::string>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return !uut && (uut.error() == error_text);
+    };
+
+    SECTION("and_then (&)") {
+        exp_type uut_to_non_void{val_value};
+        CHECK(and_then_to_non_void(uut_to_non_void));
+        exp_type uut_to_void{val_value};
+        CHECK(and_then_to_void(uut_to_void));
+        exp_type_void uut_void_to_void{};
+        CHECK(and_then_void_to_void(uut_void_to_void));
+        exp_type_void uut_void_to_non_void{};
+        CHECK(and_then_void_to_non_void(uut_void_to_non_void));
+        exp_type uut_val_to_error{val_value};
+        CHECK(and_then_val_to_error(uut_val_to_error));
+        exp_type uut_pass_thru_error{turner::unexpected{error_text}};
+        CHECK(and_then_pass_thru_error(uut_pass_thru_error));
+    }
+    SECTION("and_then (const &)") {
+        const exp_type uut_to_non_void{val_value};
+        CHECK(and_then_to_non_void(uut_to_non_void));
+        const exp_type uut_to_void{val_value};
+        CHECK(and_then_to_void(uut_to_void));
+        const exp_type_void uut_void_to_void{};
+        CHECK(and_then_void_to_void(uut_void_to_void));
+        const exp_type_void uut_void_to_non_void{};
+        CHECK(and_then_void_to_non_void(uut_void_to_non_void));
+        const exp_type uut_val_to_error{val_value};
+        CHECK(and_then_val_to_error(uut_val_to_error));
+        const exp_type uut_pass_thru_error{turner::unexpected{error_text}};
+        CHECK(and_then_pass_thru_error(uut_pass_thru_error));
+    }
+    SECTION("and_then (&&)") {
+        exp_type uut_to_non_void{val_value};
+        CHECK(and_then_to_non_void(std::move(uut_to_non_void)));
+        exp_type uut_to_void{val_value};
+        CHECK(and_then_to_void(std::move(uut_to_void)));
+        exp_type_void uut_void_to_void{};
+        CHECK(and_then_void_to_void(std::move(uut_void_to_void)));
+        exp_type_void uut_void_to_non_void{};
+        CHECK(and_then_void_to_non_void(std::move(uut_void_to_non_void)));
+        exp_type uut_val_to_error{val_value};
+        CHECK(and_then_val_to_error(std::move(uut_val_to_error)));
+        exp_type uut_pass_thru_error{turner::unexpected{error_text}};
+        CHECK(and_then_pass_thru_error(std::move(uut_pass_thru_error)));
+    }
+    SECTION("and_then (const &&)") {
+        const exp_type uut_to_non_void{val_value};
+        CHECK(and_then_to_non_void(std::move(uut_to_non_void)));
+        const exp_type uut_to_void{val_value};
+        CHECK(and_then_to_void(std::move(uut_to_void)));
+        const exp_type_void uut_void_to_void{};
+        CHECK(and_then_void_to_void(std::move(uut_void_to_void)));
+        const exp_type_void uut_void_to_non_void{};
+        CHECK(and_then_void_to_non_void(std::move(uut_void_to_non_void)));
+        const exp_type uut_val_to_error{val_value};
+        CHECK(and_then_val_to_error(std::move(uut_val_to_error)));
+        const exp_type uut_pass_thru_error{turner::unexpected{error_text}};
+        CHECK(and_then_pass_thru_error(std::move(uut_pass_thru_error)));
+    }
+
+    // -- or_else
+
+    const auto or_else_pass_thru_value = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .or_else([](const auto&) -> turner::expected<my_val_type, char>
+                { return turner::unexpected{'a'}; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, char>);
+        return uut && (uut.value() == val_value);
+    };
+
+    const auto or_else_same_types = [](auto&& err) {
+        const auto uut = std::forward<decltype(err)>(err)
+            .or_else([](const auto&) -> turner::expected<my_val_type, my_err_type>
+                { return turner::unexpected{alt_text}; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return !uut && (uut.error() == alt_text);
+    };
+
+    const auto or_else_different_types = [](auto&& err) {
+        static constexpr int test_value = 1922;
+        const auto uut = std::forward<decltype(err)>(err)
+            .or_else([](const auto&) -> turner::expected<my_val_type, int>
+                { return turner::unexpected{test_value}; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, int>);
+        return !uut && (uut.error() == test_value);
+    };
+
+    SECTION("or_else (&)") {
+        exp_type uut_pass_thru_value{val_value};
+        CHECK(or_else_pass_thru_value(uut_pass_thru_value));
+        exp_type uut_same_types{turner::unexpected{error_text}};
+        CHECK(or_else_same_types(uut_same_types));
+        exp_type uut_different_types{turner::unexpected{error_text}};
+        CHECK(or_else_different_types(uut_different_types));
+    }
+    SECTION("or_else (const &)") {
+        const exp_type uut_pass_thru_value{val_value};
+        CHECK(or_else_pass_thru_value(uut_pass_thru_value));
+        const exp_type uut_same_types{turner::unexpected{error_text}};
+        CHECK(or_else_same_types(uut_same_types));
+        const exp_type uut_different_types{turner::unexpected{error_text}};
+        CHECK(or_else_different_types(uut_different_types));
+    }
+    SECTION("or_else (&&)") {
+        exp_type uut_pass_thru_value{val_value};
+        CHECK(or_else_pass_thru_value(std::move(uut_pass_thru_value)));
+        exp_type uut_same_types{turner::unexpected{error_text}};
+        CHECK(or_else_same_types(std::move(uut_same_types)));
+        exp_type uut_different_types{turner::unexpected{error_text}};
+        CHECK(or_else_different_types(std::move(uut_different_types)));
+    }
+    SECTION("or_else (const &&)") {
+        const exp_type uut_pass_thru_value{val_value};
+        CHECK(or_else_pass_thru_value(std::move(uut_pass_thru_value)));
+        const exp_type uut_same_types{turner::unexpected{error_text}};
+        CHECK(or_else_same_types(std::move(uut_same_types)));
+        const exp_type uut_different_types{turner::unexpected{error_text}};
+        CHECK(or_else_different_types(std::move(uut_different_types)));
+    }
+
+    // -- transform
+
+    const auto transform_to_same_type = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .transform([](int v){return -v;});
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut && uut.value() == -val_value;
+    };
+
+    const auto transform_to_different_type = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .transform([](int v){return std::to_string(v);});
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, std::string>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut && (uut == std::to_string(val_value));
+    };
+
+    const auto transform_to_void_type = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .transform([](int v){(void)v;});
+        static_assert(std::is_void_v<typename decltype(uut)::value_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut.has_value();
+    };
+
+    const auto transform_from_void_type = [](auto&& val) {
+        using val_type = std::remove_cvref_t<decltype(val)>;
+        static_assert(std::is_void_v<typename val_type::value_type>);
+
+        const auto uut = std::forward<decltype(val)>(val)
+            .transform([](){ return 12; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, int>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut && (uut.value() == 12);
+    };
+
+    const auto transform_pass_thru_error = [](auto&& err) {
+        const auto uut = std::forward<decltype(err)>(err)
+            .transform([](int v){return -v;});
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return (!uut.has_value()) && (uut.error() == error_text);
+    };
+
+    SECTION("transform (&)") {
+        exp_type uut_to_same_type{val_value};
+        CHECK(transform_to_same_type(uut_to_same_type));
+        exp_type uut_to_different_type{val_value};
+        CHECK(transform_to_different_type(uut_to_different_type));
+        exp_type_void uut_from_void_type;
+        CHECK(transform_from_void_type(uut_from_void_type));
+        exp_type uut_to_void_type{val_value};
+        CHECK(transform_to_void_type(uut_to_void_type));
+        exp_type uut_pass_thru_err{turner::unexpected{error_text}};
+        CHECK(transform_pass_thru_error(uut_pass_thru_err));
+    }
+    SECTION("transform (const &)") {
+        const exp_type uut_to_same_type{val_value};
+        CHECK(transform_to_same_type(uut_to_same_type));
+        const exp_type uut_to_different_type{val_value};
+        CHECK(transform_to_different_type(uut_to_different_type));
+        const exp_type_void uut_from_void_type;
+        CHECK(transform_from_void_type(uut_from_void_type));
+        const exp_type uut_to_void_type{val_value};
+        CHECK(transform_to_void_type(uut_to_void_type));
+        const exp_type uut_pass_thru_err{turner::unexpected{error_text}};
+        CHECK(transform_pass_thru_error(uut_pass_thru_err));
+    }
+    SECTION("transform (&&)") {
+        exp_type uut_to_same_type{val_value};
+        CHECK(transform_to_same_type(std::move(uut_to_same_type)));
+        exp_type uut_to_different_type{val_value};
+        CHECK(transform_to_different_type(std::move(uut_to_different_type)));
+        exp_type_void uut_from_void_type;
+        CHECK(transform_from_void_type(std::move(uut_from_void_type)));
+        exp_type uut_to_void_type{val_value};
+        CHECK(transform_to_void_type(std::move(uut_to_void_type)));
+        exp_type uut_pass_thru_err{turner::unexpected{error_text}};
+        CHECK(transform_pass_thru_error(std::move(uut_pass_thru_err)));
+    }
+    SECTION("transform (const &&)") {
+        const exp_type uut_to_same_type{val_value};
+        CHECK(transform_to_same_type(std::move(uut_to_same_type)));
+        const exp_type uut_to_different_type{val_value};
+        CHECK(transform_to_different_type(std::move(uut_to_different_type)));
+        const exp_type_void uut_from_void_type;
+        CHECK(transform_from_void_type(std::move(uut_from_void_type)));
+        const exp_type uut_to_void_type{val_value};
+        CHECK(transform_to_void_type(std::move(uut_to_void_type)));
+        const exp_type uut_pass_thru_err{turner::unexpected{error_text}};
+        CHECK(transform_pass_thru_error(std::move(uut_pass_thru_err)));
+    }
+
+    // -- transform_error
+
+    const auto transform_error_same_types = [](auto&& err) {
+        const auto uut = std::forward<decltype(err)>(err)
+            .transform_error([](const auto &){ return std::string{alt_text}; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return !uut && uut.error() == alt_text;
+    };
+
+    const auto transform_error_different_types = [](auto&& err) {
+        using arg_type = std::remove_cvref_t<decltype(err)>;
+        static_assert(!std::is_same_v<typename arg_type::error_type, int>);
+
+        static constexpr int test_val = 13;
+        const auto uut = std::forward<decltype(err)>(err)
+            .transform_error([](const auto&){return test_val;});
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, int>);
+        return !uut && (uut.error() == test_val);
+    };
+
+    const auto transform_error_pass_thru_value = [](auto&& val) {
+        const auto uut = std::forward<decltype(val)>(val)
+            .transform_error([](const auto& s){ return s; });
+        static_assert(std::is_same_v<typename decltype(uut)::value_type, my_val_type>);
+        static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
+        return uut.has_value() && (uut.value() == 12);
+    };
+
+    SECTION("transform_error (&)") {
+        exp_type uut_same_types{turner::unexpected{error_text}};
+        CHECK(transform_error_same_types(uut_same_types));
+        exp_type uut_pass_thru_value{val_value};
+        CHECK(transform_error_pass_thru_value(uut_pass_thru_value));
+        exp_type uut_different_types{turner::unexpected{error_text}};
+        CHECK(transform_error_different_types(uut_different_types));
+    }
+    SECTION("transform_error (const &)") {
+        const exp_type uut_same_types{turner::unexpected{error_text}};
+        CHECK(transform_error_same_types(uut_same_types));
+        const exp_type uut_pass_thru_value{val_value};
+        CHECK(transform_error_pass_thru_value(uut_pass_thru_value));
+        const exp_type uut_different_types{turner::unexpected{error_text}};
+        CHECK(transform_error_different_types(uut_different_types));
+    }
+    SECTION("transform_error (&&)") {
+        exp_type uut_same_types{turner::unexpected{error_text}};
+        CHECK(transform_error_same_types(std::move(uut_same_types)));
+        exp_type uut_pass_thru_value{val_value};
+        CHECK(transform_error_pass_thru_value(std::move(uut_pass_thru_value)));
+        exp_type uut_different_types{turner::unexpected{error_text}};
+        CHECK(transform_error_different_types(std::move(uut_different_types)));
+    }
+    SECTION("transform_error (const &&)") {
+        const exp_type uut_same_types{turner::unexpected{error_text}};
+        CHECK(transform_error_same_types(std::move(uut_same_types)));
+        const exp_type uut_pass_thru_value{val_value};
+        CHECK(transform_error_pass_thru_value(std::move(uut_pass_thru_value)));
+        const exp_type uut_different_types{turner::unexpected{error_text}};
+        CHECK(transform_error_different_types(std::move(uut_different_types)));
+    }
+}
+
 // TODO : swap
 // TODO : operator==
 // TODO : All of the above TODOs for expected<void,...>
@@ -717,7 +1067,7 @@ TEST_CASE ("turner::expected<void, ...> construction (constexpr)") {
         int     _a{};
         std::size_t  _sz{};
     public:
-        constexpr Foo(int a) noexcept : _a(a) {}
+        constexpr explicit Foo(int a) noexcept : _a(a) {}
         constexpr Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
         [[nodiscard]] constexpr int get() const noexcept { return _a; }
         [[nodiscard]] constexpr std::size_t size() const noexcept { return _sz; }
@@ -771,4 +1121,5 @@ TEST_CASE ("turner::expected<void,...> observers") {
     }
 }
 
+// NOLINTEND(bugprone-use-after-move)
 // NOLINTEND(readability-function-cognitive-complexity)

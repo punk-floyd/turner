@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.18)
 
-# Pull project version from inc/turner/turner_version.h
-file (READ "inc/turner/turner_version.h" VER_SRC)
-string(REGEX MATCH "define TURNER_VER_MAJ[ \t]+([0-9]*)" _ ${VER_SRC})
+# Pull project/library version from main header (lib_version_* values)
+file (READ "inc/turner/json.h" VER_SRC)
+string(REGEX MATCH "lib_version_major[ \t]*=[ \t]*([0-9]*)" _${VER_SRC})
 set(VER_MAJ ${CMAKE_MATCH_1})
-string(REGEX MATCH "define TURNER_VER_MIN[ \t]+([0-9]*)" _ ${VER_SRC})
+string(REGEX MATCH "lib_version_minor[ \t]*=[ \t]*([0-9]*)" _${VER_SRC})
 set(VER_MIN ${CMAKE_MATCH_1})
-string(REGEX MATCH "define TURNER_VER_SUB_MIN[ \t]+([0-9]*)" _ ${VER_SRC})
+string(REGEX MATCH "lib_version_sub_minor[ \t]*=[ \t]*([0-9]*)" _${VER_SRC})
 set(VER_SUB ${CMAKE_MATCH_1})
-string(REGEX MATCH "define TURNER_VER_PKG[ \t]+([0-9]*)" _ ${VER_SRC})
+string(REGEX MATCH "lib_version_package[ \t]*=[ \t]*([0-9]*)" _${VER_SRC})
 set(VER_PKG ${CMAKE_MATCH_1})
 
 project(turner

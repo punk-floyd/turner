@@ -1,12 +1,15 @@
 # {💈} Turner
 
-Turner is a portable, constexpr-friendly C++20 JSON parser library.
+Turner is a portable, header-only C++20 JSON parser library with no external
+dependencies.
 
-It is a header only library with no external dependencies. Eventually it
-will also be available as a module.
+You expected JSON parsing. But wait - there's an unexpected bonus: Turner
+includes a C++20 implementation of C++23 `std::expected`. You pay NOTHING
+extra! We're practically GIVING it away.
 
-It's functional, but the API is not yet ready for prime time. Stay tuned.
+## Links
 
-## Building
-
-To build tests, you'll need [Catch2](https://github.com/catchorg/Catch2) installed.
+- [Building](doc/building.md)
+    - Or, just copy `inc/turner` into your project and call it a day.
+- [Parsing JSON](doc/decoding.md)
+- [JSON values](doc/json-values.md)

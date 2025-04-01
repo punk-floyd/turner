@@ -14,7 +14,8 @@
 using namespace turner;
 
 static constexpr auto test_src =
-    R"|({"person":{"name":"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|";
+    //R"|({"person":{"name":"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|";
+    R"|({"person":{name:"Alice","age":25,"address":{"city":"San Francisco","zip":"94105"}},"occupation":"Software Engineer"})|";
 
 template <class T = char>
 struct basic_pretty_printer {
@@ -31,10 +32,19 @@ static_assert(printer_has_padding<basic_pretty_printer<char>>);
 static_assert(printer_has_linebreak<basic_pretty_printer<char>>);
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])  // NOLINT(bugprone-exception-escape)
-{                                                                   // ^^^^^^-- MOOMOO : Temporary
-    const json data(test_src);
+{
+    json data;
+
+    const auto parsed = data.decode(test_src);
+    if (!parsed) {
+        std::cerr << "Failed to parse JSON: "
+            << parsed.error_message() << '\n';
+        return -1;
+    }
+    const auto& value = data.get_value();
+
     const auto output =
-        data.get_value().encode(encode_policy{}, basic_pretty_printer{});
+        value.encode(encode_policy{}, basic_pretty_printer{});
 
     std::cout << output << '\n';
 }

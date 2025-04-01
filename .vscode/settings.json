@@ -78,11 +78,5 @@
         "format": "cpp",
         "span": "cpp",
         "text_encoding": "cpp"
-    },
-    "cSpell.words": [
-        "bugprone",
-        "Koker",
-        "linebreak",
-        "swappable"
-    ]
+    }
 }

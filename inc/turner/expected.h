@@ -11,9 +11,6 @@
  * we're in a position to build against C++23 we can just replace
  * turner::expected (et al.) with std::expected (et al.).
  *
- * It should be standard compliant with the following temporary exceptions:
- *  - We don't have the std::expected<void, ...> partial specialization.
- *
  * @copyright Copyright (c) 2024 Mike DeKoker
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -53,11 +50,36 @@
 
 namespace turner {
 
-// Represented as an unexpected value
+namespace imp::exp {
+    template <class E> constexpr bool is_unexpected = false;
+    template <class T> constexpr bool is_expected   = false;
+}
+
+// A tag type for in-place construction of an unexpected value in an turner::expected object
+struct unexpect_t { constexpr explicit unexpect_t() = default; };
+inline constexpr unexpect_t unexpect{};
+
+template <class T>
+concept valid_expected_type =
+    !std::is_reference_v<T> &&
+    !std::is_function_v<T>  &&
+    !imp::exp::is_unexpected<T> &&
+    !std::is_same_v<T, std::in_place_t> &&
+    !std::is_same_v<T, turner::unexpect_t>;
+
 template <class E>
-    requires (
-        !std::is_array_v<E> && std::is_object_v<E> &&
-        !std::is_const_v<E> && !std::is_volatile_v<E>)
+concept valid_unexpected_type =
+     std::is_object_v<E>   &&
+    !std::is_volatile_v<E> &&
+    !std::is_array_v<E>    &&
+    !std::is_const_v<E>    &&
+    !imp::exp::is_unexpected<E>;
+
+template <valid_expected_type T, valid_unexpected_type E>
+class expected;
+
+// Represented as an unexpected value
+template <valid_unexpected_type E>
 class unexpected
 {
 public:
@@ -131,12 +153,6 @@ private:
 template <class E>
 unexpected(E) -> unexpected<E>;
 
-// A tag type for in-place construction of an unexpected value in an turner::expected object
-struct unexpect_t {
-    constexpr explicit unexpect_t() = default;
-};
-inline constexpr unexpect_t unexpect{};
-
 template <class ErrorType>
 class bad_expected_access;
 
@@ -174,27 +190,16 @@ public:
     [[nodiscard]] const ErrorType&& error() const && noexcept { return std::move(_error); }
     [[nodiscard]]       ErrorType&& error()       && noexcept { return std::move(_error); }
 
-    [[nodiscard]] const char* what() const noexcept override
-    {
-        return "Expected object does not have a value";
-    }
-
 private:
 
     ErrorType _error;
 };
 
-template <class T, class E>
-class expected;
-
 namespace imp::exp {
-    template <class T>
-    constexpr bool is_expected = false;
+
     template <class T, class E>
     constexpr bool is_expected<expected<T, E>> = true;
 
-    template <class E>
-    constexpr bool is_unexpected = false;
     template <class E>
     constexpr bool is_unexpected<unexpected<E>> = true;
 
@@ -354,18 +359,13 @@ namespace imp::exp {
         (std::is_void_v<T> || std::is_nothrow_swappable_v<T>) &&
         std::is_nothrow_move_constructible_v<E> &&
         std::is_nothrow_swappable_v<E>;
-}
+
+} // end namespace imp::exp
 
 /// A wrapper that contains either an expected or error value
-template <class T, class E>
+template <valid_expected_type T, valid_unexpected_type E>
 class expected {
 public:
-
-    static_assert(!std::is_reference_v<T>);
-    static_assert(!std::is_function_v<T>);
-    static_assert(!imp::exp::is_unexpected<T>);
-    static_assert(!std::is_same_v<T, std::in_place_t>);
-    static_assert(!std::is_same_v<T, turner::unexpect_t>);
 
     using value_type = T;
     using error_type = E;
@@ -529,15 +529,15 @@ private:
 
     // These constructors used by transform and transform_error
 
-    template <class TOther, class EOther>
+    template <valid_expected_type TOther, valid_unexpected_type EOther>
     friend class expected;
 
     using in_place_invoke = imp::exp::in_place_invoke;
     using unexpect_invoke = imp::exp::unexpect_invoke;
 
-    template <class F, class Arg>
-    constexpr expected([[maybe_unused]] in_place_invoke tag, F&& f, Arg&& arg)
-        : _value(std::invoke(std::forward<F>(f), std::forward<Arg>(arg)))
+    template <class F, class... Arg>
+    constexpr expected([[maybe_unused]] in_place_invoke tag, F&& f, Arg&&... arg)
+        : _value(std::invoke(std::forward<F>(f), std::forward<Arg>(arg)...))
         , _has_value(true)
     {}
 
@@ -778,11 +778,22 @@ private:
         requires (std::is_constructible_v<E, E&>)
     constexpr auto transform(F&& func) &
     {
-        using ResultType = expected<imp::exp::transform_result_t<F, T&>, E>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(value())>>;
+        using ResultType = expected<U, E>;
+
+        static_assert(std::is_void_v<U> ||
+            std::is_constructible_v<U, std::invoke_result_t<F, decltype(value())>>,
+            "U must be constructible from result of func(value())");
 
         if (has_value()) {
-            return ResultType{ in_place_invoke{},
-                std::forward<F>(func), _value };
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(func), value());
+                return ResultType();
+            }
+            else {
+                return ResultType{ in_place_invoke{},
+                    std::forward<F>(func), _value };
+            }
         }
 
         return ResultType{ unexpect, _error };
@@ -792,39 +803,72 @@ private:
         requires (std::is_constructible_v<E, const E&>)
     constexpr auto transform(F&& func) const&
     {
-        using ResultType = expected<imp::exp::transform_result_t<F, const T&>, E>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(value())>>;
+        using ResultType = expected<U, E>;
+
+        static_assert(std::is_void_v<U> ||
+            std::is_constructible_v<U, std::invoke_result_t<F, decltype(value())>>,
+            "U must be constructible from result of func(value())");
 
         if (has_value()) {
-            return ResultType{ in_place_invoke{},
-                std::forward<F>(func), _value };
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(func), _value);
+                return ResultType();
+            }
+            else {
+                return ResultType{ in_place_invoke{},
+                    std::forward<F>(func), _value };
+            }
         }
 
         return ResultType{ unexpect, _error };
     }
 
     template <class F>
-        requires (std::is_constructible_v<E, E>)
+        requires (std::is_constructible_v<E, E&&>)
     constexpr auto transform(F&& func) &&
     {
-        using ResultType = expected<imp::exp::transform_result_t<F, T>, E>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(std::move(value()))>>;
+        using ResultType = expected<U, E>;
+
+        static_assert(std::is_void_v<U> ||
+            std::is_constructible_v<U, std::invoke_result_t<F, decltype(std::move(value()))>>,
+            "U must be constructible from result of func(std::move(value()))");
 
         if (has_value()) {
-            return ResultType{ in_place_invoke{},
-                std::forward<F>(func), std::move(_value) };
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(func), std::move(_value));
+                return ResultType();
+            }
+            else {
+                return ResultType{ in_place_invoke{},
+                    std::forward<F>(func), std::move(_value) };
+            }
         }
 
         return ResultType{unexpect, std::move(_error)};
     }
 
     template <class F>
-        requires (std::is_constructible_v<E, const E>)
+        requires (std::is_constructible_v<E, const E&&>)
     constexpr auto transform(F&& func) const&&
     {
-        using ResultType = expected<imp::exp::transform_result_t<F, const T>, E>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(std::move(value()))>>;
+        using ResultType = expected<U, E>;
+
+        static_assert(std::is_void_v<U> ||
+            std::is_constructible_v<U, std::invoke_result_t<F, decltype(std::move(_value))>>,
+            "U must be constructible from result of func(std::move(value()))");
 
         if (has_value()) {
-            return ResultType{ in_place_invoke{},
-                std::forward<F>(func), std::move(_value) };
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(func), std::move(_value));
+                return ResultType();
+            }
+            else {
+                return ResultType{ in_place_invoke{},
+                    std::forward<F>(func), std::move(_value) };
+            }
         }
 
         return ResultType{ unexpect, std::move(_error) };
@@ -836,7 +880,11 @@ private:
         requires (std::is_constructible_v<T, T&>)
     constexpr auto transform_error(F&& func) &
     {
-        using ResultType = expected<T, imp::exp::transform_result_t<F, E&>>;
+        using G = std::remove_cv_t<std::invoke_result_t<F, decltype(_error)>>;
+        using ResultType = expected<T, G>;
+
+        static_assert(valid_unexpected_type<G> && std::is_constructible_v<G,
+            std::invoke_result_t<F, decltype(_error)>>);
 
         if (has_value())
             return ResultType{ std::in_place, _value };
@@ -848,7 +896,11 @@ private:
         requires (std::is_constructible_v<T, const T&>)
     constexpr auto transform_error(F&& func) const &
     {
-        using ResultType = expected<T, imp::exp::transform_result_t<F, const E&>>;
+        using G = std::remove_cv_t<std::invoke_result_t<F, decltype(_error)>>;
+        using ResultType = expected<T, G>;
+
+        static_assert(valid_unexpected_type<G> && std::is_constructible_v<G,
+            std::invoke_result_t<F, decltype(_error)>>);
 
         if (has_value())
             return ResultType{ std::in_place, _value };
@@ -857,10 +909,14 @@ private:
     }
 
     template <class F>
-        requires (std::is_constructible_v<T, T>)
+        requires (std::is_constructible_v<T, T&&>)
     constexpr auto transform_error(F&& func) &&
     {
-        using ResultType = expected<T, imp::exp::transform_result_t<F, E>>;
+        using G = std::remove_cv_t<std::invoke_result_t<F, decltype(std::move(_error))>>;
+        using ResultType = expected<T, G>;
+
+        static_assert(valid_unexpected_type<G> && std::is_constructible_v<G,
+            std::invoke_result_t<F, decltype(std::move(_error))>>);
 
         if (has_value())
             return ResultType{ std::in_place, std::move(_value) };
@@ -870,10 +926,14 @@ private:
     }
 
     template <class F>
-        requires (std::is_constructible_v<T, const T>)
+        requires (std::is_constructible_v<T, const T&&>)
     constexpr auto transform_error(F&& func) const &&
     {
-        using ResultType = expected<T, imp::exp::transform_result_t<F, const E>>;
+        using G = std::remove_cv_t<std::invoke_result_t<F, decltype(std::move(_error))>>;
+        using ResultType = expected<T, G>;
+
+        static_assert(valid_unexpected_type<G> && std::is_constructible_v<G,
+            std::invoke_result_t<F, decltype(std::move(_error))>>);
 
         if (has_value())
             return ResultType{ std::in_place, std::move(_value) };
@@ -1152,7 +1212,7 @@ private:
 };
 
 // Partial specialization for void
-template <class VoidType, class E>
+template <valid_expected_type VoidType, valid_unexpected_type E>
     requires (std::is_void_v<VoidType>)
 class expected<VoidType, E> {
 public:
@@ -1311,7 +1371,7 @@ private:
 
     // These constructors used by transform and transform_error
 
-    template <class TOther, class EOther>
+    template <valid_expected_type TOther, valid_unexpected_type EOther>
     friend class expected;
 
     using in_place_invoke = imp::exp::in_place_invoke;
@@ -1508,10 +1568,22 @@ private:
         requires (std::is_constructible_v<E, E&>)
     constexpr auto transform(F&& func) &
     {
-        using ResultType = std::remove_cv_t<std::invoke_result_t<F>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F>>;
+        using ResultType = expected<U, E>;
 
-        if (has_value())
-            return ResultType{ in_place_invoke{}, std::forward<F>(func) };
+        static_assert(std::is_void_v<U> ||
+            std::is_constructible_v<U, std::invoke_result_t<F>>);
+
+        if (has_value()) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(func));
+                return ResultType();
+            }
+            else {
+                return ResultType{ in_place_invoke{},
+                    std::forward<F>(func) };
+            }
+        }
 
         return ResultType{ unexpect, _error };
     }
@@ -1520,34 +1592,64 @@ private:
         requires (std::is_constructible_v<E, const E&>)
     constexpr auto transform(F&& func) const&
     {
-        using ResultType = std::remove_cv_t<std::invoke_result_t<F>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F>>;
+        using ResultType = expected<U, E>;
 
-        if (has_value())
-            return ResultType{ in_place_invoke{}, std::forward<F>(func) };
+        static_assert(std::is_void_v<U> ||
+            std::is_constructible_v<U, std::invoke_result_t<F>>);
+
+        if (has_value()) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(func));
+                return ResultType();
+            }
+            else {
+                return ResultType{ in_place_invoke{},
+                    std::forward<F>(func) };
+            }
+        }
 
         return ResultType{ unexpect, _error };
     }
 
     template <class F>
-        requires (std::is_constructible_v<E, E>)
+        requires (std::is_constructible_v<E, E&&>)
     constexpr auto transform(F&& func) &&
     {
-        using ResultType = std::remove_cv_t<std::invoke_result_t<F>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F>>;
+        using ResultType = expected<U, E>;
 
-        if (has_value())
-            return ResultType{ in_place_invoke{}, std::forward<F>(func) };
+        if (has_value()) {
+            if constexpr  (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(func));
+                return ResultType();
+            }
+            else {
+                return ResultType{ in_place_invoke{},
+                    std::forward<F>(func) };
+            }
+        }
 
         return ResultType{unexpect, std::move(_error)};
     }
 
     template <class F>
-        requires (std::is_constructible_v<E, const E>)
+        requires (std::is_constructible_v<E, const E&&>)
     constexpr auto transform(F&& func) const&&
     {
-        using ResultType = std::remove_cv_t<std::invoke_result_t<F>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F>>;
+        using ResultType = expected<U, E>;
 
-        if (has_value())
-            return ResultType{ in_place_invoke{}, std::forward<F>(func) };
+        if (has_value()) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(func));
+                return ResultType();
+            }
+            else {
+                return ResultType{ in_place_invoke{},
+                    std::forward<F>(func) };
+            }
+        }
 
         return ResultType{ unexpect, std::move(_error) };
     }

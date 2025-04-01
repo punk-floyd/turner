@@ -366,9 +366,18 @@ TEST_CASE ("Input stream parsing check" "[parsing]") {
 
     json uut;
 
-    std::ifstream ifs("sample.json");
+    const std::string source{"sample.json"};
+    const std::string bad_source;
+
+    std::ifstream ifs(source);
     REQUIRE(ifs.is_open());             // This would be a test setup error
-    REQUIRE(uut.decode_stream(ifs));
+    CHECK(uut.decode_stream(ifs));
+
+    CHECK(uut.decode_file(source));
+    CHECK(uut.decode_file(source.c_str()));
+
+    CHECK_FALSE(uut.decode_file(bad_source));
+    CHECK_FALSE(uut.decode_file(bad_source.c_str()));
 }
 
 TEST_CASE ("Parsing from common string-like sources" "[parsing]") {

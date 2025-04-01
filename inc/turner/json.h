@@ -54,15 +54,15 @@
 
 // A local C++20 implementation of C++23 std::expected
 #include "expected.h"
-#include "turner_version.h"     // Defines library version
 
 namespace turner {
 
-inline constexpr std::string_view lib_version_string = TURNER_VER_STR;
-inline constexpr int lib_version_major     = TURNER_VER_MAJ;
-inline constexpr int lib_version_minor     = TURNER_VER_MIN;
-inline constexpr int lib_version_sub_minor = TURNER_VER_SUB_MIN;
-inline constexpr int lib_version_package   = TURNER_VER_PKG;
+// NB: CMakeLists.txt pulls library version from this data
+inline constexpr std::string_view lib_version_string = "1.0.4";
+inline constexpr unsigned lib_version_major          = 1;
+inline constexpr unsigned lib_version_minor          = 0;
+inline constexpr unsigned lib_version_sub_minor      = 4;
+inline constexpr unsigned lib_version_package        = 0;
 
 // -- JSON error codes and support -----------------------------------------
 
@@ -82,6 +82,7 @@ enum class json_error {             // NOLINT(readability-enum-initial-value,per
     not_a_token,
     not_a_number,
     nonunique_member_name,
+    input_error,
 
     // Encode errors: [200,300)
     invalid_json_value = 200,
@@ -129,8 +130,6 @@ struct encode_policy {
     Disposition value_invalid{Disposition::Fail};
     /// What to do when a number is invalid (NaN or infinity)
     Disposition number_invalid{Disposition::Fail};
-
-    // MDTODO : bool escape_whitespace{false};
 };
 
 /// JSON decoding policy: adjusts decoding behavior
@@ -281,14 +280,32 @@ public:
     template <std::input_iterator InputIt>
     struct decode_result {
 
+        // -- Construction
+
         constexpr decode_result() = default;
 
         constexpr decode_result(InputIt input_it, json_error code = json_error{})
             : it(input_it), err(code)
         {}
 
+        // -- Accessors
+
+        // Generate a std::error_code for the decoding error
+        auto as_error_code() const noexcept -> std::error_code
+        {
+            return make_error_code(err);
+        }
+
+        // Returns a string describing the JSON decoding error
+        auto error_message() const -> std::string
+        {
+            return as_error_code().message();
+        }
+
         /// This object implicitly converts to bool: true means we're error free
         constexpr explicit operator bool() const noexcept { return err == json_error{}; }
+
+        // -- Public members
 
         InputIt     it{};   ///< End of decoded data or error location
         json_error  err{};  ///< Offending error code, or 0
@@ -402,6 +419,23 @@ public:
     {
         return decode(std::istreambuf_iterator<char>{ifs},
             std::istreambuf_iterator<char>{std::default_sentinel}, policy);
+    }
+
+    /// Decode data from the given file
+    auto decode_file(const char* pathname, decode_policy policy = decode_policy{})
+        -> decode_result<std::istreambuf_iterator<char>>
+    {
+        std::ifstream ifs{pathname};
+        if (!ifs)
+            return {{}, json_error::input_error};
+
+        return decode_stream(ifs, policy);
+    }
+
+    /// Decode data from the given file
+    auto decode_file(const std::string& pathname, decode_policy policy = decode_policy{})
+    {
+        return decode_file(pathname.c_str(), policy);
     }
 
     // -- Attributes
@@ -1524,6 +1558,10 @@ public:
                 return "Invalid JSON token";
             case json_error::not_a_number:
                 return "Invalid JSON number";
+            case json_error::nonunique_member_name:
+                return "The name of an object member was not unique";
+            case json_error::input_error:
+                return "Failed to access input data";
             default:
                 return "Unknown JSON error";
         }
