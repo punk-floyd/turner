@@ -464,10 +464,11 @@ public:
     }
 
     // Construct expected value by direct-initialization of an object
-    template <class U = T>
+    template <class U = std::remove_cvref_t<T>>
         requires (
             !std::is_same_v<std::remove_cvref_t<U>, std::in_place_t> &&
             !std::is_same_v<std::remove_cvref_t<U>, expected> &&
+            !std::is_same_v<std::remove_cvref_t<U>, unexpect_t> &&
             std::is_constructible_v<T, U> &&
             !imp::exp::is_unexpected<std::remove_cvref_t<U>> && (
                 !std::is_same_v<std::remove_cv_t<T>, bool> ||
