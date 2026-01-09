@@ -284,7 +284,7 @@ public:
 
         constexpr decode_result() = default;
 
-        constexpr decode_result(InputIt input_it, json_error code = json_error{})
+        constexpr explicit decode_result(InputIt input_it, json_error code = json_error{})
             : it(input_it), err(code)
         {}
 
@@ -427,7 +427,7 @@ public:
     {
         std::ifstream ifs{pathname};
         if (!ifs)
-            return {{}, json_error::input_error};
+            return decode_result<std::istreambuf_iterator<char>>{{}, json_error::input_error};
 
         return decode_stream(ifs, policy);
     }
@@ -817,7 +817,7 @@ public:
 
             constexpr encode_result() = default;
 
-            constexpr encode_result(OutputIt output_it, json_error code = json_error{})
+            constexpr explicit encode_result(OutputIt output_it, json_error code = json_error{})
                 : it(output_it), err(code)
             {}
 
@@ -1154,7 +1154,7 @@ protected:
 
     // Extract the next token from the input stream
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr TokenType next_token(parse_ctx<InputIt, Stop>& p_ctx) const noexcept
+    [[nodiscard]] static constexpr TokenType next_token(parse_ctx<InputIt, Stop>& p_ctx) noexcept
     {
         // Try to match against a keyword token: "true", "false", or "null"
         const auto try_match = [&p_ctx](std::string_view word, TokenType t) noexcept
@@ -1206,7 +1206,7 @@ protected:
 
     // Consume whitespace; returns true if we have no more input
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    bool eat_whitespace(parse_ctx<InputIt, Stop>& p_ctx) const noexcept
+    static bool eat_whitespace(parse_ctx<InputIt, Stop>& p_ctx) noexcept
     {
         for (; !p_ctx.empty() && is_whitespace(*p_ctx.it_at); ++p_ctx.it_at) {}
         return p_ctx.empty();
@@ -1214,7 +1214,7 @@ protected:
 
     /// Parse an explicit unicode point from JSON string: \uXXXX
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop, std::output_iterator<char> OutputIt>
-    constexpr bool parse_unicode_point(parse_ctx<InputIt, Stop>& p_ctx, OutputIt&& out_it) const
+    static constexpr bool parse_unicode_point(parse_ctx<InputIt, Stop>& p_ctx, OutputIt&& out_it)
     {
         const auto hex_char_value = [](char ch) -> std::optional<int> {
             if ((ch >= '0') && (ch <= '9')) { return  0 + (ch - '0'); }
@@ -1261,7 +1261,7 @@ protected:
 
     // Parse a string
     template <std::input_iterator InputIt, std::sentinel_for<InputIt> Stop>
-    [[nodiscard]] constexpr string parse_string(parse_ctx<InputIt, Stop>& p_ctx) const
+    [[nodiscard]] static constexpr string parse_string(parse_ctx<InputIt, Stop>& p_ctx)
     {
         auto& it = p_ctx.it_at;
         string s{};
