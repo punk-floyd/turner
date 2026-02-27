@@ -322,7 +322,7 @@ TEST_CASE ("turner::expected<!void,...> construction (constexpr)") {
         std::size_t  _sz{};
     public:
         constexpr explicit Foo(int a) noexcept : _a(a) {}
-        constexpr Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
+        constexpr explicit Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
         [[nodiscard]] constexpr int get() const noexcept { return _a; }
         [[nodiscard]] constexpr std::size_t size() const noexcept { return _sz; }
     };
@@ -410,17 +410,59 @@ TEST_CASE ("turner::expected value_or") {
     SECTION ("value_or(...) const&") {
         static_assert(my_expected{sample_value}.value_or(other_value) == sample_value);
         static_assert(my_expected{turner::unexpected{error_value}}.value_or(other_value) == other_value);
-        REQUIRE(true);  // If it compiles, it passes
+        CHECK(true);  // If it compiles, it passes
     }
 
     SECTION("value_or(...) &&") {
         turner::expected<std::string, int> uut_val{sample_value};
         const auto moved_value{std::move(uut_val).value_or("uh-oh")};
-        REQUIRE(moved_value == sample_value);
+        CHECK(moved_value == sample_value);
         constexpr auto* great_success = "Great success!";
         turner::expected<std::string, int> uut_err{turner::unexpected{42}};
         const auto moved_error{std::move(uut_err).value_or(great_success)};
-        REQUIRE(moved_error == great_success);
+        CHECK(moved_error == great_success);
+    }
+}
+
+TEST_CASE ("turner::expected error_or") {
+
+    using my_expected = turner::expected<int, std::string>;
+
+    constexpr auto* default_value = "default_value";
+    constexpr auto* error_value   = "error_value";
+
+    SECTION("error_or(...) const&") {
+        const my_expected uut_val{0};
+        CHECK(uut_val.error_or(default_value) == default_value);
+        const my_expected uut_err{turner::unexpected{error_value}};
+        CHECK(uut_err.error_or(default_value) == error_value);
+    }
+
+    SECTION("error_or(...) &&") {
+        my_expected uut_val{0};
+        const auto moved_value{std::move(uut_val).error_or(default_value)};
+        CHECK(moved_value == default_value);
+        my_expected uut_err{turner::unexpected{error_value}};
+        const auto moved_error{std::move(uut_err).error_or(default_value)};
+        CHECK(moved_error == error_value);
+    }
+
+    using void_expected = turner::expected<void, std::string>;
+
+    SECTION("error_or(...) const& (void partial specialization)") {
+        const void_expected uut_val{};
+        CHECK(uut_val.error_or(default_value) == default_value);
+        const void_expected uut_err{turner::unexpected{error_value}};
+        CHECK(uut_err.error_or(default_value) == error_value);
+    }
+
+    SECTION("error_or(...) && (void partial specialization)") {
+        void_expected uut_val{};
+        const auto moved_value{std::move(uut_val).error_or(default_value)};
+        CHECK(moved_value == default_value);
+        void_expected uut_err{turner::unexpected{error_value}};
+        const auto moved_error{std::move(uut_err).error_or(default_value)};
+        CHECK(moved_error == error_value);
     }
 }
 
@@ -432,7 +474,7 @@ TEST_CASE ("turner::expected emplace") {
     public:
         constexpr Foo() = default;
         constexpr explicit Foo(int a) noexcept : _a(a) {}
-        constexpr Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
+        constexpr explicit Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
         [[nodiscard]] constexpr int get() const noexcept { return _a; }
         [[nodiscard]] constexpr std::size_t size() const noexcept { return _sz; }
     };
@@ -739,7 +781,7 @@ TEST_CASE ("turner::expected: monadic operations")
             .transform([](int v){return std::to_string(v);});
         static_assert(std::is_same_v<typename decltype(uut)::value_type, std::string>);
         static_assert(std::is_same_v<typename decltype(uut)::error_type, my_err_type>);
-        return uut && (uut == std::to_string(val_value));
+        return uut && (uut.value() == std::to_string(val_value));
     };
 
     const auto transform_to_void_type = [](auto&& val) {
@@ -1068,7 +1110,7 @@ TEST_CASE ("turner::expected<void, ...> construction (constexpr)") {
         std::size_t  _sz{};
     public:
         constexpr explicit Foo(int a) noexcept : _a(a) {}
-        constexpr Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
+        constexpr explicit Foo(std::initializer_list<int> il) noexcept : _sz(il.size()) {}
         [[nodiscard]] constexpr int get() const noexcept { return _a; }
         [[nodiscard]] constexpr std::size_t size() const noexcept { return _sz; }
     };
