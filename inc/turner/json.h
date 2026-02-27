@@ -945,7 +945,7 @@ public:
 
             *ctx.it++ = '}';
 
-            return ctx.it;
+            return encode_result{ctx.it};
         }
 
         /// JSON-encode the given array to the given output iterator
@@ -972,7 +972,7 @@ public:
 
             *ctx.it++ = ']';
 
-            return ctx.it;
+            return encode_result{ctx.it};
         }
 
         /// JSON-encode the given string to the given output iterator
@@ -1014,7 +1014,7 @@ public:
 
             *ctx.it++ = '"';
 
-            return ctx.it;
+            return encode_result{ctx.it};
         }
 
         /// JSON-encode the given number to the given output iterator
@@ -1043,7 +1043,7 @@ public:
                 for (int i = 0; i<len1; ++i) *ctx.it++ = buf [static_cast<unsigned>(i)];
 #endif
 
-            return ctx.it;
+            return encode_result{ctx.it};
         }
 
         /// JSON-encode the given integer to the given output iterator
@@ -1059,7 +1059,7 @@ public:
             const auto [ptr, ec] = std::to_chars(first, last, val);
             for (const auto* p = first; p != ptr; *ctx.it++ = *p++) {}
 
-            return ctx.it;
+            return encode_result{ctx.it};
         }
 
         /// Output the given literal string to the given output iterator
@@ -1073,7 +1073,7 @@ public:
                 *ctx.it++ = c;
             }
 
-            return ctx.it;
+            return encode_result{ctx.it};
         }
 
         // -- Implementation
