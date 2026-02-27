@@ -38,6 +38,7 @@
 #include <type_traits>
 #include <functional>
 #include <exception>
+#include <concepts>
 #include <utility>
 #include <memory>
 
@@ -139,7 +140,8 @@ public:
     }
 
     template <class E2>
-    friend constexpr bool operator==(unexpected& lhs, unexpected<E2>& rhs)
+        requires std::equality_comparable_with<E, E2>
+    friend constexpr bool operator==(const unexpected& lhs, const unexpected<E2>& rhs)
     {
         return lhs.error() == rhs.error();
     }
@@ -256,6 +258,10 @@ namespace imp::exp {
     static constexpr auto copy_cx_ok =
         std::is_copy_constructible_v<T> &&              // NOLINT(misc-redundant-expression)
         std::is_copy_constructible_v<E>;
+    template <class T, class E>
+    static constexpr auto is_nothrow_copy_cx =
+        std::is_nothrow_copy_constructible_v<T> &&      // NOLINT(misc-redundant-expression)
+        std::is_nothrow_copy_constructible_v<E>;
 
     template <class T, class E>
     static constexpr auto trivial_move_cx_ok =
@@ -386,32 +392,24 @@ public:
     //      -- Copy
 
     // Trivial copy constructor
-    constexpr expected(const expected& other)                               // (2)
-        requires (imp::exp::trivial_copy_cx_ok<T,E>)
-    = default;
+    constexpr expected(const expected& other) = default;                    // (2)
 
     // Non-trivial copy constructor
     constexpr expected(const expected& other)                               // (2)
+        noexcept (imp::exp::is_nothrow_copy_cx<T, E>)
         requires (!imp::exp::trivial_copy_cx_ok<T,E> && imp::exp::copy_cx_ok<T,E>)
         : _has_value(other.has_value())
     {
         if (has_value())
-            std::construct_at(std::addressof(_value), other.value());
+            std::construct_at(std::addressof(_value), other._value);
         else
-            std::construct_at(std::addressof(_error), other.error());
+            std::construct_at(std::addressof(_error), other._error);
     }
-
-    constexpr expected(const expected&)
-        requires (!imp::exp::trivial_copy_cx_ok<T,E> && !imp::exp::copy_cx_ok<T,E>)
-    = delete;
 
     //      -- Move
 
     // Trivial move constructor
-    constexpr expected(expected&&)
-        noexcept(imp::exp::is_nothrow_move_cx<T,E>)                         // (3)
-        requires (imp::exp::trivial_move_cx_ok<T,E>)
-    = default;
+    constexpr expected(expected&&) = default;                               // (3)
 
     // Non trivial move constructor
     constexpr expected(expected&& other)
@@ -420,14 +418,10 @@ public:
         : _has_value(other.has_value())
     {
         if (has_value())
-            std::construct_at(std::addressof(_value), std::move(other)._value);
+            std::construct_at(std::addressof(_value), std::move(other._value));
         else
-            std::construct_at(std::addressof(_error), std::move(other)._error);
+            std::construct_at(std::addressof(_error), std::move(other._error));
     }
-
-    expected(expected&&)
-        requires (!imp::exp::trivial_move_cx_ok<T,E> && !imp::exp::move_cx_ok<T,E>)
-    = delete;
 
     //      -- Converting (expected)
 
@@ -458,9 +452,9 @@ public:
         : _has_value(other.has_value())
     {
         if (has_value())
-            std::construct_at(std::addressof(_value), std::move(other)._value);
+            std::construct_at(std::addressof(_value), std::move(other._value));
         else
-            std::construct_at(std::addressof(_error), std::move(other)._error);
+            std::construct_at(std::addressof(_error), std::move(other._error));
     }
 
     // Construct expected value by direct-initialization of an object
@@ -623,6 +617,20 @@ private:
             static_cast<T>(std::forward<U>(default_value));
     }
 
+    template <class G = E>
+        requires (std::is_copy_constructible_v<E> && std::is_convertible_v<G, E>)
+    [[nodiscard]] constexpr E error_or(G&& default_value) const&
+    {
+        return has_value() ? std::forward<G>(default_value) : error();
+    }
+
+    template <class G = E>
+        requires (std::is_copy_constructible_v<E> && std::is_convertible_v<G, E>)
+    [[nodiscard]] constexpr E error_or(G&& default_value) &&
+    {
+        return has_value() ? std::forward<G>(default_value) : std::move(_error);
+    }
+
     // -- Monadic operations
 
     //      -- and_then
@@ -779,11 +787,11 @@ private:
         requires (std::is_constructible_v<E, E&>)
     constexpr auto transform(F&& func) &
     {
-        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(value())>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(_value)>>;
         using ResultType = expected<U, E>;
 
         static_assert(std::is_void_v<U> ||
-            std::is_constructible_v<U, std::invoke_result_t<F, decltype(value())>>,
+            std::is_constructible_v<U, std::invoke_result_t<F, decltype(_value)>>,
             "U must be constructible from result of func(value())");
 
         if (has_value()) {
@@ -804,11 +812,11 @@ private:
         requires (std::is_constructible_v<E, const E&>)
     constexpr auto transform(F&& func) const&
     {
-        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(value())>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(_value)>>;
         using ResultType = expected<U, E>;
 
         static_assert(std::is_void_v<U> ||
-            std::is_constructible_v<U, std::invoke_result_t<F, decltype(value())>>,
+            std::is_constructible_v<U, std::invoke_result_t<F, decltype(_value)>>,
             "U must be constructible from result of func(value())");
 
         if (has_value()) {
@@ -829,17 +837,17 @@ private:
         requires (std::is_constructible_v<E, E&&>)
     constexpr auto transform(F&& func) &&
     {
-        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(std::move(value()))>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(std::move(_value))>>;
         using ResultType = expected<U, E>;
 
         static_assert(std::is_void_v<U> ||
-            std::is_constructible_v<U, std::invoke_result_t<F, decltype(std::move(value()))>>,
+            std::is_constructible_v<U, std::invoke_result_t<F, decltype(std::move(_value))>>,
             "U must be constructible from result of func(std::move(value()))");
 
         if (has_value()) {
             if constexpr (std::is_void_v<U>) {
                 std::invoke(std::forward<F>(func), std::move(_value));
-                return ResultType();
+                return ResultType{};
             }
             else {
                 return ResultType{ in_place_invoke{},
@@ -854,7 +862,7 @@ private:
         requires (std::is_constructible_v<E, const E&&>)
     constexpr auto transform(F&& func) const&&
     {
-        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(std::move(value()))>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(std::move(_value))>>;
         using ResultType = expected<U, E>;
 
         static_assert(std::is_void_v<U> ||
@@ -1100,11 +1108,11 @@ public:
         requires (imp::exp::assign_from_unexpected<T, E, G>)
     {
         if (has_value()) {
-            reinit_expected(_error, _value, std::forward<G>(other.error));
+            reinit_expected(_error, _value, std::move(other).error());
             _has_value = false;
         }
         else
-            _error = std::forward<G>(other.error());
+            _error = std::move(other).error();
 
         return *this;
     }
@@ -1133,6 +1141,8 @@ public:
             return;
         }
 
+        // We have a value and other does not
+
         if constexpr (std::is_nothrow_move_constructible_v<E>) {
             imp::exp::Guard<E> guard(other._error);
             std::construct_at(std::addressof(other._value), std::move(_value)); // Might throw
@@ -1146,7 +1156,7 @@ public:
             std::construct_at(std::addressof(_error), std::move(other._error)); // Might throw
             _has_value = false;
             std::destroy_at(std::addressof(other._error));
-            std::construct_at(std::addressof(other._error), guard.release());
+            std::construct_at(std::addressof(other._value), guard.release());
             other._has_value = true;
         }
     }
@@ -1158,7 +1168,9 @@ public:
 
     /// Compares two expected objects (T2 is non-void)
     template <class T2, class E2>
-        requires (!std::is_void_v<T2>)
+        requires (!std::is_void_v<T2>
+            && std::equality_comparable_with<T, T2>
+            && std::equality_comparable_with<E, E2>)
     friend constexpr bool operator==(const expected& lhs, const expected<T2, E2>& rhs)
     {
         const auto lhs_valued = lhs.has_value();
@@ -1174,7 +1186,7 @@ public:
 
     /// Compares two expected objects (T2 is void)
     template <class T2, class E2>
-        requires (std::is_void_v<T2>)
+        requires (std::is_void_v<T2> && std::equality_comparable_with<E, E2>)
     friend constexpr bool operator==(const expected& lhs, const expected<T2, E2>& rhs)
     {
         const auto lhs_valued = lhs.has_value();
@@ -1188,7 +1200,7 @@ public:
 
     /// Compares expected object with a value
     template <class T2>
-        requires (!std::is_void_v<T>)
+        requires (!std::is_void_v<T> && std::equality_comparable_with<T, T2>)
     friend constexpr bool operator==(const expected& x, const T2& val)
     {
         return x.has_value() && static_cast<bool>(*x == val);
@@ -1196,6 +1208,7 @@ public:
 
     /// Compares expected object with an unexpected value
     template <class E2>
+        requires (std::equality_comparable_with<E, E2>)
     friend constexpr bool operator==(const expected& x, const unexpected<E2>& e)
     {
         return !x.has_value() && static_cast<bool>(x.error() == e.error());
@@ -1203,11 +1216,17 @@ public:
 
 private:
 
+#if defined(_MSC_VER) && !defined(__clang__)
+# define TURNER_EXPECTED_NO_UNIQUE_ADDR     [[msvc::no_unique_address]]
+#else
+# define TURNER_EXPECTED_NO_UNIQUE_ADDR     [[no_unique_address]]
+#endif
+
     // -- Member data
 
     union {
-        value_type  _value;
-        error_type  _error;
+        TURNER_EXPECTED_NO_UNIQUE_ADDR value_type  _value;
+        TURNER_EXPECTED_NO_UNIQUE_ADDR error_type  _error;
     };
     bool            _has_value;
 };
@@ -1229,19 +1248,25 @@ public:
     //    The (#) below refer to the cppreference constructor number
 
     /// Default construct with value-initialized value type
-    constexpr expected()                                                    // (1)
+    constexpr expected() noexcept                                           // (1)
         : _no_value(), _has_value(true)
     {}
 
     // -- Copy
 
+    //
+    // For some reason, cppcheck asserts that _has_value is not initialized
+    // in the trivial copy and move constructors.
+    //
+    // cppcheck-suppress-begin uninitMemberVar
+    //
+
     // Trivial copy constructor
-    constexpr expected(const expected& other)                               // (2)
-        requires (std::is_trivially_copy_constructible_v<E>)
-    = default;
+    constexpr expected(const expected&) = default;                          // (2)
 
     // Non-trivial copy constructor
     constexpr expected(const expected& other)                               // (2)
+        noexcept (std::is_nothrow_copy_constructible_v<E>)
         requires (std::is_copy_constructible_v<E> && !std::is_trivially_copy_constructible_v<E>)
         : _has_value(other.has_value())
     {
@@ -1251,17 +1276,14 @@ public:
             std::construct_at(std::addressof(_error), other.error());
     }
 
-    expected(const expected& other)
-        requires (!std::is_copy_constructible_v<E> && !std::is_trivially_copy_constructible_v<E>)
-    = delete;
-
     //      -- Move
 
     // Trivial move constructor
-    constexpr expected(expected&&)
-        noexcept(std::is_nothrow_move_constructible_v<E>)                   // (3)
-        requires (std::is_trivially_move_constructible_v<E>)
-    = default;
+    constexpr expected(expected&&) = default;                               // (3)
+
+    //
+    // cppcheck-suppress-end uninitMemberVar
+    //
 
     // Non-trivial move constructor
     constexpr expected(expected&& other)
@@ -1272,12 +1294,8 @@ public:
         if (has_value())
             std::construct_at(std::addressof(_no_value));
         else
-            std::construct_at(std::addressof(_error), std::move(other)._error);
+            std::construct_at(std::addressof(_error), std::move(other._error));
     }
-
-    expected(expected&&)
-        requires(!std::is_move_constructible_v<E> && !std::is_trivially_move_constructible_v<E>)
-    = delete;
 
     //      -- Converting (expected)
 
@@ -1324,7 +1342,7 @@ public:
         if (has_value())
             std::construct_at(std::addressof(_no_value));
         else
-            std::construct_at(std::addressof(_error), std::move(other)._error);
+            std::construct_at(std::addressof(_error), std::move(other._error));
     }
 
     // (6) is not valid for std::is_void_v<value_type>
@@ -1421,6 +1439,20 @@ private:
     [[nodiscard]] constexpr bool has_value() const noexcept
     {
         return _has_value;
+    }
+
+    template <class G = E>
+        requires (std::is_copy_constructible_v<E> && std::is_convertible_v<G, E>)
+    [[nodiscard]] constexpr E error_or(G&& default_value) const&
+    {
+        return has_value() ? std::forward<G>(default_value) : error();
+    }
+
+    template <class G = E>
+        requires (std::is_copy_constructible_v<E> && std::is_convertible_v<G, E>)
+    [[nodiscard]] constexpr E error_or(G&& default_value) &&
+    {
+        return has_value() ? std::forward<G>(default_value) : std::move(_error);
     }
 
     // -- Monadic operations
@@ -1810,11 +1842,11 @@ public:
         requires (imp::exp::assign_from_unexpected<VoidType, E, const G&>)
     {
         if (has_value()) {
-            reinit_expected(_error, _no_value, std::forward<const G&>(other.error()));
+            reinit_expected(_error, _no_value, std::move(other).error());
             _has_value = false;
         }
         else
-            _error = std::forward<const G&>(other.error());
+            _error = std::move(other).error();
 
         return *this;
     }
@@ -1825,11 +1857,11 @@ public:
         requires (imp::exp::assign_from_unexpected<VoidType, E, G>)
     {
         if (has_value()) {
-            reinit_expected(_error, _no_value, std::forward<G>(other.error));
+            reinit_expected(_error, _no_value, std::move(other).error());
             _has_value = false;
         }
         else
-            _error = std::forward<G>(other.error());
+            _error = std::move(other).error();
 
         return *this;
     }
@@ -1857,9 +1889,13 @@ public:
         }
 
         // this_valued && !that_valued
-        std::destroy_at(std::addressof(_no_value));
+        std::destroy_at  (std::addressof(_no_value));
         std::construct_at(std::addressof(_error), std::move(other._error));
-        std::destroy_at(std::addressof(other._error));
+        _has_value = false;
+
+        std::destroy_at  (std::addressof(other._error));
+        std::construct_at(std::addressof(other._no_value));
+        other._has_value = true;
     }
 
     friend constexpr void swap(expected& x, expected& y) noexcept(noexcept(x.swap(y)))
@@ -1869,7 +1905,7 @@ public:
 
     /// Compares two expected objects (T2 is [cv] void)
     template <class T2, class E2>
-        requires(std::is_void_v<T2>)
+        requires(std::is_void_v<T2> && std::equality_comparable_with<E, E2>)
     friend constexpr bool operator==(const expected& lhs,
         const turner::expected<T2, E2>& rhs)
     {
@@ -1886,6 +1922,7 @@ public:
 
     /// Compares expected object with an unexpected value
     template <class E2>
+        requires (std::equality_comparable_with<E, E2>)
     friend constexpr bool operator==(const expected& x, const unexpected<E2>& e)
     {
         return !x.has_value() && static_cast<bool>(x.error() == e.error());
@@ -1904,8 +1941,8 @@ private:
     // -- Member data
 
     union {
-        no_type     _no_value;
-        error_type  _error;
+        TURNER_EXPECTED_NO_UNIQUE_ADDR no_type     _no_value;
+        TURNER_EXPECTED_NO_UNIQUE_ADDR error_type  _error;
     };
     bool            _has_value;
 };
