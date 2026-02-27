@@ -352,10 +352,11 @@ namespace imp::exp {
 
     template <class T, class E>
     static constexpr auto is_swappable =
-        std::is_swappable_v<T> &&
+        (std::is_void_v<T> || std::is_swappable_v<T>) &&
         std::is_swappable_v<E> &&
-        std::is_move_constructible_v<T> &&
+        (std::is_void_v<T> || std::is_move_constructible_v<T>) &&
         std::is_move_constructible_v<E> && (
+            std::is_void_v<T> ||
             std::is_nothrow_move_constructible_v<T> ||
             std::is_nothrow_move_constructible_v<E>);
 
@@ -1001,7 +1002,7 @@ private:
             std::construct_at(std::addressof(new_val), std::move(temp));
         }
         else {
-            imp::exp::Guard<OldType> guard(std::addressof(old_val));
+            imp::exp::Guard<OldType> guard(old_val);
             std::construct_at(std::addressof(new_val), std::forward<Args>(args)...); // Might throw
             guard.release();
         }
@@ -1093,11 +1094,11 @@ public:
         requires (imp::exp::assign_from_unexpected<T, E, const G&>)
     {
         if (has_value()) {
-            reinit_expected(_error, _value, std::forward<const G&>(other.error()));
+            reinit_expected(_error, _value, other.error());
             _has_value = false;
         }
         else
-            _error = std::forward<const G&>(other.error());
+            _error = other.error();
 
         return *this;
     }
@@ -1842,11 +1843,11 @@ public:
         requires (imp::exp::assign_from_unexpected<VoidType, E, const G&>)
     {
         if (has_value()) {
-            reinit_expected(_error, _no_value, std::move(other).error());
+            reinit_expected(_error, _no_value, other.error());
             _has_value = false;
         }
         else
-            _error = std::move(other).error();
+            _error = other.error();
 
         return *this;
     }
