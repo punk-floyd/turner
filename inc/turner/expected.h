@@ -1201,7 +1201,7 @@ public:
 
     /// Compares expected object with a value
     template <class T2>
-        requires (!std::is_void_v<T> && std::equality_comparable_with<T, T2>)
+        requires (!std::is_void_v<T> && !imp::exp::is_expected<std::remove_cvref_t<T2>>)
     friend constexpr bool operator==(const expected& x, const T2& val)
     {
         return x.has_value() && static_cast<bool>(*x == val);
