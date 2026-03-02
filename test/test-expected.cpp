@@ -165,9 +165,6 @@ TEST_CASE ("turner::expected<!void,...> constructors") {
         REQUIRE(uut.has_value() == false);
         REQUIRE(!uut);       // operator bool
         REQUIRE(uut.error() == sample_error);
-
-        // Accessing value() should throw
-        REQUIRE_THROWS_AS(uut.value(), turner::bad_expected_access<error_type>);
     }
 
     SECTION ("Construct with unexpected value rvalue (8)") {
@@ -175,9 +172,6 @@ TEST_CASE ("turner::expected<!void,...> constructors") {
         REQUIRE(uut.has_value() == false);
         REQUIRE(!uut);       // operator bool
         REQUIRE(uut.error() == sample_error);
-
-        // Accessing value() should throw
-        REQUIRE_THROWS_AS(uut.value(), turner::bad_expected_access<error_type>);
     }
 
     SECTION ("Copy construction: source is expected (2)") {
@@ -377,6 +371,27 @@ TEST_CASE ("turner::expected<!void,...> observers") {
         REQUIRE(*uut_val2       == sample_value);   // Was a copy, not a move
     }
 
+    SECTION("value()") {
+        // expected& and const expected&
+        my_expected uut_a{sample_value};
+        CHECK  (uut_a.value() == sample_value);
+        CHECK  (const_cast<const my_expected&>(uut_a).value() == sample_value);
+
+        // expected&&
+        my_expected uut_b{sample_value};
+        auto const val_b = std::move(uut_b).value();
+        CHECK(val_b == sample_value);
+
+        // const expected&&
+        const my_expected uut_c{sample_value};
+        auto const val_c = std::move(uut_c).value();
+        CHECK(val_c == sample_value);
+
+        // Accessing value() should throw if we hold unexpected
+        const my_expected uut_d{turner::unexpected{sample_error}};
+        REQUIRE_THROWS_AS(uut_d.value(), turner::bad_expected_access<error_type>);
+    }
+
     SECTION("error()") {
         // E& and const E&
         my_expected uut_err{turner::unexpected{sample_error}};
@@ -386,8 +401,8 @@ TEST_CASE ("turner::expected<!void,...> observers") {
         const auto moved_error = std::move(uut_err).error();
         REQUIRE(moved_error == sample_error);
         REQUIRE(uut_err.error().empty());  // NOLINT(bugprone-use-after-move)
-        my_expected uut_err2{turner::unexpected{sample_error}};
-        const auto not_moved_error = static_cast<const my_expected&&>(uut_err2).error();
+        const my_expected uut_err2{turner::unexpected{sample_error}};
+        const auto not_moved_error = std::move(uut_err2).error();
         REQUIRE(not_moved_error  == sample_error);
         REQUIRE(uut_err2.error() == sample_error);
     }
@@ -501,7 +516,7 @@ TEST_CASE ("turner::expected emplace") {
     }
 }
 
-TEST_CASE ("turner::expected<!void,...> assignment") {
+TEST_CASE ("turner::expected assignment") {
 
     using value_type = std::string;
     using error_type = std::string;
@@ -510,9 +525,12 @@ TEST_CASE ("turner::expected<!void,...> assignment") {
     const error_type sample_error = "Chicago Cubs";
     const error_type other_error  = "San Diego Padres";
 
-    using my_expected = turner::expected<value_type, error_type>;
+    using my_expected   = turner::expected<value_type, error_type>;
+    using void_expected = turner::expected<void,       error_type>;
 
-    SECTION("Copy assignment") {
+    // -- Primary template (non-void value type)
+
+    SECTION("Non-void copy assignment") {
 
         const my_expected src_val{sample_value};
         const my_expected src_err{turner::unexpected{sample_error}};
@@ -542,7 +560,7 @@ TEST_CASE ("turner::expected<!void,...> assignment") {
         REQUIRE(uut_err_to_val.value() == src_val.value());
     }
 
-    SECTION("Move assignment") {
+    SECTION("Non-void move assignment") {
 
         my_expected src_val_to_val{sample_value};
         my_expected uut_val_to_val{};
@@ -576,8 +594,104 @@ TEST_CASE ("turner::expected<!void,...> assignment") {
         REQUIRE(uut_err_to_val.value() == sample_value);
     }
 
-    // TODO : Assign from an expected value
-    // TODO : Assign from an unexpected value
+    SECTION("Non-void assign from an expected value") {
+        my_expected uut{turner::unexpected{sample_error}};
+        CHECK_FALSE(uut.has_value());
+        uut = sample_value;
+        REQUIRE(uut.has_value());
+        CHECK  (uut.value() == sample_value);
+    }
+
+    SECTION("Non-void assign from an unexpected value") {
+        my_expected uut{};
+        CHECK(uut.has_value());
+
+        // From const unexpected<G>&
+        const auto const_err = turner::unexpected{sample_error};
+        uut = const_err;
+        REQUIRE_FALSE(uut.has_value());
+        CHECK(uut.error() == sample_error);
+
+        // From unexpected<G>&&
+        uut = turner::unexpected{other_error};
+        REQUIRE_FALSE(uut.has_value());
+        CHECK(uut.error() == other_error);
+    }
+
+    // -- Void specialization
+
+    SECTION("Void copy assignment") {
+
+        const void_expected src_val;
+        const void_expected src_err{turner::unexpected{sample_error}};
+
+        void_expected uut_val_to_val;
+        REQUIRE(uut_val_to_val.has_value());
+        uut_val_to_val = src_val;
+        REQUIRE(uut_val_to_val.has_value());
+
+        void_expected uut_val_to_err;
+        REQUIRE(uut_val_to_err.has_value());
+        uut_val_to_err = src_err;
+        REQUIRE_FALSE(uut_val_to_err.has_value());
+        REQUIRE(uut_val_to_err.error() == src_err.error());
+
+        void_expected uut_err_to_err{turner::unexpected{other_error}};
+        REQUIRE_FALSE(uut_err_to_err.has_value());
+        uut_err_to_err = src_err;
+        REQUIRE_FALSE(uut_err_to_err.has_value());
+        REQUIRE(uut_err_to_err.error() == src_err.error());
+
+        void_expected uut_err_to_val{turner::unexpected{other_error}};
+        REQUIRE_FALSE(uut_err_to_val.has_value());
+        uut_err_to_val = src_val;
+        REQUIRE(uut_err_to_val.has_value());
+    }
+
+    SECTION("Void move assignment") {
+
+        void_expected src_val_to_val;
+        void_expected uut_val_to_val;
+        REQUIRE(uut_val_to_val.has_value());
+        uut_val_to_val = std::move(src_val_to_val);
+        REQUIRE(uut_val_to_val.has_value());
+
+        void_expected src_val_to_err{turner::unexpected{sample_error}};
+        void_expected uut_val_to_err;
+        REQUIRE(uut_val_to_err.has_value());
+        uut_val_to_err = std::move(src_val_to_err);
+        REQUIRE_FALSE(uut_val_to_err.has_value());
+        REQUIRE(uut_val_to_err.error() == sample_error);
+
+        void_expected src_err_to_err{turner::unexpected{sample_error}};
+        void_expected uut_err_to_err{turner::unexpected{other_error}};
+        REQUIRE_FALSE(uut_err_to_err.has_value());
+        uut_err_to_err = std::move(src_err_to_err);
+        REQUIRE_FALSE(uut_err_to_err.has_value());
+        REQUIRE(uut_err_to_err.error() == sample_error);
+
+        void_expected src_err_to_val;
+        void_expected uut_err_to_val{turner::unexpected{sample_error}};
+        REQUIRE_FALSE(uut_err_to_val.has_value());
+        uut_err_to_val = std::move(src_err_to_val);
+        REQUIRE(uut_err_to_val.has_value());
+    }
+
+    SECTION("Void assign from an unexpected value") {
+        void_expected uut{};
+        CHECK(uut.has_value());
+
+        // From const unexpected<G>&
+        const auto const_err = turner::unexpected{sample_error};
+        uut = const_err;
+        REQUIRE_FALSE(uut.has_value());
+        CHECK(uut.error() == sample_error);
+
+        // From unexpected<G>&&
+        uut = turner::unexpected{other_error};
+        REQUIRE_FALSE(uut.has_value());
+        CHECK(uut.error() == other_error);
+    }
 }
 
 TEST_CASE ("turner::expected: monadic operations")
@@ -924,10 +1038,6 @@ TEST_CASE ("turner::expected: monadic operations")
     }
 }
 
-// TODO : swap
-// TODO : operator==
-// TODO : All of the above TODOs for expected<void,...>
-
 TEST_CASE ("turner::expected<void,...> constructors") {
 
     using value_type = void;
@@ -963,9 +1073,6 @@ TEST_CASE ("turner::expected<void,...> constructors") {
         REQUIRE(uut.has_value() == false);
         REQUIRE(!uut);       // operator bool
         REQUIRE(uut.error() == sample_error);
-
-        // Accessing value() should throw
-        REQUIRE_THROWS_AS(uut.value(), turner::bad_expected_access<error_type>);
     }
 
     SECTION ("Construct with unexpected value rvalue (8)") {
@@ -973,9 +1080,6 @@ TEST_CASE ("turner::expected<void,...> constructors") {
         REQUIRE(uut.has_value() == false);
         REQUIRE(!uut);       // operator bool
         REQUIRE(uut.error() == sample_error);
-
-        // Accessing value() should throw
-        REQUIRE_THROWS_AS(uut.value(), turner::bad_expected_access<error_type>);
     }
 
     SECTION ("Copy construction: source is expected (2)") {
@@ -1132,19 +1236,35 @@ TEST_CASE ("turner::expected<void, ...> construction (constexpr)") {
 
 TEST_CASE ("turner::expected<void,...> observers") {
 
-    using value_type = void;
     using error_type = std::string;
     const error_type sample_error = "Ron Coomer";
 
-    // Requirements of value_type for this test case
-    static_assert(std::is_void_v<value_type>);
-
-    using my_expected = turner::expected<value_type, error_type>;
+    using my_expected = turner::expected<void, error_type>;
 
     SECTION("operator*") {
         const my_expected uut{};
         *uut;           // Not very exciting
         REQUIRE(true);  // but we'll give it a point
+    }
+
+    SECTION("value()") {
+        // expected& and const expected&
+        my_expected uut_a;
+        const_cast<      my_expected&>(uut_a).value();
+        const_cast<const my_expected&>(uut_a).value();
+        CHECK(true);
+
+        my_expected uut_b;
+        std::move(uut_b).value();
+        CHECK(true);
+
+        const my_expected uut_c;
+        std::move(uut_c).value();
+        CHECK(true);
+
+        // Accessing value() should throw if we hold unexpected
+        const my_expected uut_d{turner::unexpected{sample_error}};
+        REQUIRE_THROWS_AS(uut_d.value(), turner::bad_expected_access<error_type>);
     }
 
     SECTION("error()") {
@@ -1160,6 +1280,132 @@ TEST_CASE ("turner::expected<void,...> observers") {
         const auto not_moved_error = static_cast<const my_expected&&>(uut_err2).error();
         REQUIRE(not_moved_error  == sample_error);
         REQUIRE(uut_err2.error() == sample_error);
+    }
+}
+
+TEST_CASE("turner::expected: swap")
+{
+    using std::swap;
+
+    SECTION("expected<!void, ...>") {
+        turner::expected<int, std::string> val_a{10};
+        turner::expected<int, std::string> val_b{20};
+        turner::expected<int, std::string> err_a{turner::unexpected{"foo"}};
+        turner::expected<int, std::string> err_b{turner::unexpected{"bar"}};
+
+        // Swap values
+        swap(val_a, val_b);
+        REQUIRE(val_a.has_value());
+        REQUIRE(val_b.has_value());
+        CHECK(val_a.value() == 20);
+        CHECK(val_b.value() == 10);
+
+        // Swap errors
+        swap(err_a, err_b);
+        REQUIRE_FALSE(err_a.has_value());
+        REQUIRE_FALSE(err_b.has_value());
+        CHECK(err_a.error() == "bar");
+        CHECK(err_b.error() == "foo");
+
+        // Swap value/error
+        swap(val_a, err_a);
+        REQUIRE      (err_a.has_value());
+        REQUIRE_FALSE(val_a.has_value());
+        CHECK(err_a.value() == 20);
+        CHECK(val_a.error() == "bar");
+
+        // Swap error/value
+        swap(err_b, val_b);
+        REQUIRE      (err_b.has_value());
+        REQUIRE_FALSE(val_b.has_value());
+        CHECK(err_b.value() == 10);
+        CHECK(val_b.error() == "foo");
+    }
+
+    SECTION("expected<void, ...>")
+    {
+        turner::expected<void, std::string> val_a;
+        turner::expected<void, std::string> val_b;
+        turner::expected<void, std::string> err_a{turner::unexpected{"foo"}};
+        turner::expected<void, std::string> err_b{turner::unexpected{"bar"}};
+
+        // Swap values
+        swap(val_a, val_b);
+        REQUIRE(val_a.has_value());
+        REQUIRE(val_b.has_value());
+
+        // Swap errors
+        swap(err_a, err_b);
+        REQUIRE_FALSE(err_a.has_value());
+        REQUIRE_FALSE(err_b.has_value());
+        CHECK(err_a.error() == "bar");
+        CHECK(err_b.error() == "foo");
+
+        // Swap value/error
+        swap(val_a, err_a);
+        REQUIRE      (err_a.has_value());
+        REQUIRE_FALSE(val_a.has_value());
+        CHECK(val_a.error() == "bar");
+
+        // Swap error/value
+        swap(err_b, val_b);
+        REQUIRE      (err_b.has_value());
+        REQUIRE_FALSE(val_b.has_value());
+        CHECK(val_b.error() == "foo");
+    }
+}
+
+TEST_CASE("turner::expected: equality")
+{
+    SECTION("expected<!void, ...>") {
+        turner::expected<int, std::string> val_a{100};
+        turner::expected<int, std::string> val_b{200};
+        turner::expected<int, std::string> val_c{100};
+        turner::expected<int, std::string> err_a{turner::unexpected{"foo"}};
+        turner::expected<int, std::string> err_b{turner::unexpected{"bar"}};
+        turner::expected<int, std::string> err_c{turner::unexpected{"foo"}};
+
+        // Compare values
+        CHECK      (val_a == val_c);
+        CHECK_FALSE(val_a != val_c);
+        CHECK_FALSE(val_a == val_b);
+        CHECK      (val_a != val_b);
+
+        // Compare errors
+        CHECK      (err_a == err_c);
+        CHECK_FALSE(err_a != err_c);
+        CHECK_FALSE(err_a == err_b);
+        CHECK      (err_a != err_b);
+
+        // Compare value/error
+        CHECK_FALSE(val_a == err_a);
+        CHECK      (val_a != err_a);
+        CHECK_FALSE(err_b == val_b);
+        CHECK      (err_b != val_b);
+    }
+
+    SECTION("expected<void, ...>") {
+        turner::expected<void, std::string> val_a;
+        turner::expected<void, std::string> val_b;
+        turner::expected<void, std::string> err_a{turner::unexpected{"foo"}};
+        turner::expected<void, std::string> err_b{turner::unexpected{"bar"}};
+        turner::expected<void, std::string> err_c{turner::unexpected{"foo"}};
+
+        // Compare value
+        CHECK      (val_a == val_b);
+        CHECK_FALSE(val_a != val_b);
+
+        // Compare errors
+        CHECK      (err_a == err_c);
+        CHECK_FALSE(err_a != err_c);
+        CHECK_FALSE(err_a == err_b);
+        CHECK      (err_a != err_b);
+
+        // Compare value/error
+        CHECK_FALSE(val_a == err_a);
+        CHECK      (val_a != err_a);
+        CHECK_FALSE(err_b == val_b);
+        CHECK      (err_b != val_b);
     }
 }
 
