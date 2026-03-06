@@ -245,40 +245,42 @@ namespace imp::exp {
     template <class F, class T>
     using transform_result_t = std::remove_cv_t<std::invoke_result_t<F&&, T&&>>;
 
+    // NOLINTBEGIN(misc-redundant-expression)
+
     template <class T, class E>
     static constexpr auto trivial_destructor =
-        std::is_trivially_destructible_v<T> &&          // NOLINT(misc-redundant-expression)
+        std::is_trivially_destructible_v<T> &&
         std::is_trivially_destructible_v<E>;
 
     template <class T, class E>
     static constexpr auto trivial_copy_cx_ok =
-        std::is_trivially_copy_constructible_v<T> &&    // NOLINT(misc-redundant-expression)
+        std::is_trivially_copy_constructible_v<T> &&
         std::is_trivially_copy_constructible_v<E>;
     template <class T, class E>
     static constexpr auto copy_cx_ok =
-        std::is_copy_constructible_v<T> &&              // NOLINT(misc-redundant-expression)
+        std::is_copy_constructible_v<T> &&
         std::is_copy_constructible_v<E>;
     template <class T, class E>
     static constexpr auto is_nothrow_copy_cx =
-        std::is_nothrow_copy_constructible_v<T> &&      // NOLINT(misc-redundant-expression)
+        std::is_nothrow_copy_constructible_v<T> &&
         std::is_nothrow_copy_constructible_v<E>;
 
     template <class T, class E>
     static constexpr auto trivial_move_cx_ok =
-        std::is_trivially_move_constructible_v<T> &&    // NOLINT(misc-redundant-expression)
+        std::is_trivially_move_constructible_v<T> &&
         std::is_trivially_move_constructible_v<E>;
     template <class T, class E>
     static constexpr auto move_cx_ok =
-        std::is_move_constructible_v<T> &&              // NOLINT(misc-redundant-expression)
+        std::is_move_constructible_v<T> &&
         std::is_move_constructible_v<E>;
     template <class T, class E>
     static constexpr auto is_nothrow_move_cx =
-        std::is_nothrow_move_constructible_v<T> &&      // NOLINT(misc-redundant-expression)
+        std::is_nothrow_move_constructible_v<T> &&
         std::is_nothrow_move_constructible_v<E>;
 
     template <class T, class E, class U, class G>
     static constexpr auto cx45_explicit =
-        !std::is_convertible_v<std::add_lvalue_reference_t<const U>, T> || // NOLINT(misc-redundant-expression)
+        !std::is_convertible_v<std::add_lvalue_reference_t<const U>, T> ||
         !std::is_convertible_v<const G&, E>;
 
     template <class T, class E, class U, class G>
@@ -302,16 +304,16 @@ namespace imp::exp {
 
     template <class T, class E>
     static constexpr auto dx_noexcept =
-        std::is_nothrow_destructible_v<T> && std::is_nothrow_destructible_v<E>; // NOLINT(misc-redundant-expression)
+        std::is_nothrow_destructible_v<T> && std::is_nothrow_destructible_v<E>;
 
     template <class T, class E>
     static constexpr auto copy_assignable =
         (std::is_void_v<T> || std::is_copy_assignable_v<T>) &&
         (std::is_void_v<T> || std::is_copy_constructible_v<T>) &&
         std::is_copy_assignable_v<E> &&
-        std::is_copy_constructible_v<E> && (            // NOLINT(misc-redundant-expression)
+        std::is_copy_constructible_v<E> && (
             std::is_void_v<T> ||
-            std::is_nothrow_move_constructible_v<T> ||  // NOLINT(misc-redundant-expression)
+            std::is_nothrow_move_constructible_v<T> ||
             std::is_nothrow_move_constructible_v<E>);
 
     template <class T, class E>
@@ -319,16 +321,16 @@ namespace imp::exp {
         (std::is_void_v<T> || std::is_move_assignable_v<T>) &&
         (std::is_void_v<T> || std::is_move_constructible_v<T>) &&
         std::is_move_assignable_v<E> &&
-        std::is_move_constructible_v<E> && (            // NOLINT(misc-redundant-expression)
+        std::is_move_constructible_v<E> && (
             std::is_void_v<T> ||
-            std::is_nothrow_move_constructible_v<T> ||  // NOLINT(misc-redundant-expression)
+            std::is_nothrow_move_constructible_v<T> ||
             std::is_nothrow_move_constructible_v<E>);
 
     template <class T, class E>
     static constexpr auto move_assign_noexcept =
         (std::is_void_v<T> || std::is_nothrow_move_assignable_v<T>) &&
         (std::is_void_v<T> || std::is_nothrow_move_constructible_v<T>) &&
-        std::is_nothrow_move_assignable_v<E> &&         // NOLINT(misc-redundant-expression)
+        std::is_nothrow_move_assignable_v<E> &&
         std::is_nothrow_move_constructible_v<E>;
 
     template <class T, class E, class U>
@@ -338,7 +340,7 @@ namespace imp::exp {
         std::is_constructible_v<T, U> &&
         std::is_assignable_v<T&, U> && (
             std::is_nothrow_constructible_v<T, U> ||
-            std::is_nothrow_move_constructible_v<T> ||  // NOLINT(misc-redundant-expression)
+            std::is_nothrow_move_constructible_v<T> ||
             std::is_nothrow_move_constructible_v<E>);
 
     template <class T, class E, class GF>
@@ -366,6 +368,8 @@ namespace imp::exp {
         (std::is_void_v<T> || std::is_nothrow_swappable_v<T>) &&
         std::is_nothrow_move_constructible_v<E> &&
         std::is_nothrow_swappable_v<E>;
+
+    // NOLINTEND(misc-redundant-expression)
 
 } // end namespace imp::exp
 
