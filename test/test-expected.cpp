@@ -567,19 +567,15 @@ TEST_CASE ("turner::expected: observers") {
     }
 
     SECTION("void: value()") {
-        // expected& and const expected&
         void_expected uut_a;
-        const_cast<      void_expected&>(uut_a).value();
-        const_cast<const void_expected&>(uut_a).value();
-        CHECK(true);
+        REQUIRE_NOTHROW(static_cast<      void_expected&>(uut_a).value());
+        REQUIRE_NOTHROW(static_cast<const void_expected&>(uut_a).value());
 
         void_expected uut_b;
-        std::move(uut_b).value();
-        CHECK(true);
+        REQUIRE_NOTHROW(std::move(uut_b).value());
 
         const void_expected uut_c;
-        std::move(uut_c).value();
-        CHECK(true);
+        REQUIRE_NOTHROW(std::move(uut_c).value());
 
         // Accessing value() should throw if we hold unexpected
         const void_expected uut_d{turner::unexpected{sample_error}};
