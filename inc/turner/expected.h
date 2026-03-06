@@ -375,7 +375,7 @@ namespace imp::exp {
 
 /// A wrapper that contains either an expected or error value
 template <valid_expected_type T, valid_unexpected_type E>
-class expected {
+class [[nodiscard]] expected {
 public:
 
     using value_type = T;
@@ -1239,7 +1239,7 @@ private:
 // Partial specialization for void
 template <valid_expected_type VoidType, valid_unexpected_type E>
     requires (std::is_void_v<VoidType>)
-class expected<VoidType, E> {
+class [[nodiscard]] expected<VoidType, E> {
 public:
 
     using value_type = VoidType;
